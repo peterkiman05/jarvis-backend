@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+frfrom fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 import os, requests
@@ -6,7 +6,8 @@ import os, requests
 app = FastAPI()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 class Message(BaseModel):
     role: str
@@ -46,14 +47,33 @@ def chat(payload: ChatRequest):
     }
 
     try:
-        res = requests.post(GROQ_URL, headers=headers, json=data)
+        res = requests.post(GROQ_CHAT_URL, headers=headers, json=data)
         res_data = res.json()
-        
         if "choices" not in res_data:
             raise HTTPException(status_code=500, detail=f"Groq API Error: {res_data}")
 
-        reply_text = res_data["choices"][0]["message"]["content"]
-        return {"reply": reply_text}
+        return {"reply": res_data["choices"][0]["message"]["content"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
+
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    
+    file_bytes = await file.read()
+    files = {"file": (file.filename, file_bytes, file.content_type)}
+    data = {"model": "whisper-large-v3-turbo"}
+
+    try:
+        res = requests.post(GROQ_AUDIO_URL, headers=headers, files=files, data=data)
+        res_data = res.json()
+        
+        if "text" not in res_data:
+            raise HTTPException(status_code=500, detail=f"Groq Whisper Error: {res_data}")
+
+        return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
