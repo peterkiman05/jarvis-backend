@@ -9,8 +9,9 @@ from ta.trend import EMAIndicator
 
 app = FastAPI()
 
+# Environment Credentials
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") # Optional for Video Generation
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN") # Optional for True MP4 Video
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -23,12 +24,11 @@ class ChatRequest(BaseModel):
 def home():
     return {"status": "JARVIS Multimodal & Quantitative Core Online"}
 
-# --- 1. PHOTOREALISTIC IMAGE GENERATION ---
+# --- 1. PHOTOREALISTIC IMAGE GENERATION ROUTE ---
 @app.get("/generate-image")
 def generate_image(prompt: str):
-    """Generates ultra-realistic 8k photos using Pollinations FLUX Engine."""
-    # Force real photography styles into the prompt automatically
-    photo_prompt = f"A professional 8k photograph of {prompt}, shot on 35mm lens, realistic textures, cinematic lighting, photorealistic, hyper-detailed, high quality"
+    """Generates high-fidelity photorealistic 8k images using Pollinations FLUX Engine."""
+    photo_prompt = f"A professional 8k photograph of {prompt}, shot on 35mm lens, realistic textures, studio lighting, photorealistic, hyper-detailed, sharp focus"
     encoded = urllib.parse.quote(photo_prompt)
     image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
     return {"prompt": prompt, "image_url": image_url}
@@ -36,7 +36,7 @@ def generate_image(prompt: str):
 # --- 2. VIDEO GENERATION ROUTE ---
 @app.get("/generate-video")
 def generate_video(prompt: str):
-    """Generates video clips using Replicate or Pollinations fallback."""
+    """Generates MP4 videos via Replicate or FLUX render preview fallback."""
     if REPLICATE_API_TOKEN:
         try:
             import replicate
@@ -48,18 +48,18 @@ def generate_video(prompt: str):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Replicate Video Error: {str(e)}")
     
-    # Free alternative fallback URL
-    encoded = urllib.parse.quote(prompt)
+    # Fallback preview engine
+    encoded = urllib.parse.quote(f"cinematic video frame of {prompt}, 8k, photorealistic")
     return {
         "prompt": prompt,
         "note": "For dedicated MP4 AI video generation, set REPLICATE_API_TOKEN on Render.",
         "video_render_url": f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=576&model=flux&nologo=true"
     }
 
-# --- 3. QUANTITATIVE TRADING ENGINE ---
+# --- 3. QUANTITATIVE XAU/USD SIGNAL ENGINE ---
 @app.get("/market/gold/analytics")
 def get_gold_analytics():
-    """Fetches live XAU/USD technicals with 0.10 lot position sizing."""
+    """Fetches live XAU/USD technicals with RSI, EMAs, and 0.10 lot position parameters."""
     try:
         gold = yf.Ticker("XAUUSD=X")
         df = gold.history(period="5d", interval="15m")
@@ -68,8 +68,9 @@ def get_gold_analytics():
             df = gold.history(period="5d", interval="15m")
 
         if df.empty or len(df) < 50:
-            return {"error": "Insufficient market data available."}
+            return {"error": "Insufficient market data available for calculation."}
 
+        # Indicators
         rsi = RSIIndicator(close=df["Close"], window=14).rsi().iloc[-1]
         ema_20 = EMAIndicator(close=df["Close"], window=20).ema_indicator().iloc[-1]
         ema_50 = EMAIndicator(close=df["Close"], window=50).ema_indicator().iloc[-1]
@@ -81,6 +82,7 @@ def get_gold_analytics():
         change = round(latest_price - day_open, 2)
         pct_change = round((change / day_open) * 100, 2)
 
+        # Signal Logic
         if latest_price >= ema_20:
             bias = "BULLISH (BUY SETUP)"
             entry = latest_price
@@ -94,6 +96,10 @@ def get_gold_analytics():
 
         sl_distance = abs(entry - sl)
         tp_distance = abs(tp - entry)
+
+        # 0.10 Lot sizing ($10 / dollar move)
+        sl_usd = round(sl_distance * 10.0, 2)
+        tp_usd = round(tp_distance * 10.0, 2)
 
         return {
             "symbol": "XAU/USD",
@@ -112,15 +118,15 @@ def get_gold_analytics():
                 "entry": entry,
                 "stop_loss": sl,
                 "take_profit": tp,
-                "sl_risk_usd": f"-${round(sl_distance * 10.0, 2)}",
-                "tp_reward_usd": f"+${round(tp_distance * 10.0, 2)}",
+                "sl_risk_usd": f"-${sl_usd}",
+                "tp_reward_usd": f"+${tp_usd}",
                 "risk_reward_ratio": "1:2"
             }
         }
     except Exception as e:
-        return {"error": f"Technical computation failed: {str(e)}"}
+        return {"error": f"Failed to compute trade setup: {str(e)}"}
 
-# --- 4. CHAT ROUTER ---
+# --- 4. MULTIMODAL CHAT ROUTER ---
 @app.post("/chat")
 def chat(payload: ChatRequest):
     if not GROQ_API_KEY:
@@ -128,20 +134,23 @@ def chat(payload: ChatRequest):
 
     user_query = payload.message.lower()
 
-    # Video Generation Request Interceptor
-    if any(k in user_query for k in ["generate video", "make a video", "create video", "animate"]):
+    # Interceptor 1: Video Requests
+    video_keywords = ["generate video", "make video", "create video", "animate", "render video"]
+    if any(k in user_query for k in video_keywords):
         vid_res = generate_video(payload.message)
         url = vid_res.get("video_url") or vid_res.get("video_render_url")
-        return {"reply": f"Here is the video generation link for your query:\n{url}"}
+        return {"reply": f"Here is the generated video link for your request:\n{url}"}
 
-    # Photorealistic Image Interceptor
-    if any(k in user_query for k in ["generate image", "draw", "create photo", "picture of", "show photo"]):
+    # Interceptor 2: Broad Photorealistic Image Requests
+    image_keywords = ["image", "picture", "photo", "draw", "visualize", "render", "generate image"]
+    if any(k in user_query for k in image_keywords):
         img_res = generate_image(payload.message)
         return {"reply": f"Here is your photorealistic rendering:\n{img_res['image_url']}"}
 
-    # Financial Signal Context Injection
+    # Interceptor 3: Market Signal & Quantitative Context Injection
     analytics_context = ""
-    if any(k in user_query for k in ["gold", "xau", "tradingview", "market", "analysis", "setup", "buy", "sell", "tp", "sl"]):
+    market_keywords = ["gold", "xau", "tradingview", "market", "analysis", "setup", "buy", "sell", "tp", "sl", "lot"]
+    if any(k in user_query for k in market_keywords):
         data = get_gold_analytics()
         if "price" in data and "trade_setup" in data:
             ts = data["trade_setup"]
@@ -158,7 +167,7 @@ def chat(payload: ChatRequest):
 
     system_prompt = (
         "You are JARVIS, an elite quantitative analyst and AI assistant. "
-        "Keep responses brief, sharp, and practical."
+        "Keep responses professional, sharp, and direct."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
@@ -184,6 +193,27 @@ def chat(payload: ChatRequest):
             raise HTTPException(status_code=500, detail=f"Groq API Error: {res_data}")
 
         return {"reply": res_data["choices"][0]["message"]["content"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- 5. AUDIO TRANSCRIPTION ROUTE ---
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
+
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    file_bytes = await file.read()
+    files = {"file": (file.filename, file_bytes, file.content_type)}
+    data = {"model": "whisper-large-v3-turbo"}
+
+    try:
+        res = requests.post(GROQ_AUDIO_URL, headers=headers, files=files, data=data, timeout=15)
+        res_data = res.json()
+        if "text" not in res_data:
+            raise HTTPException(status_code=500, detail=f"Groq Whisper Error: {res_data}")
+
+        return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
         if df.empty:
