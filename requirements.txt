@@ -5,5 +5,4 @@ pydantic
 pandas
 yfinance
 ta
-sqlite3
 replicate
