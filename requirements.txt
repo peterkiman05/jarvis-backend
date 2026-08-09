@@ -1,9 +1,8 @@
 fastapi
 uvicorn
 requests
-pydantic
 pandas
 yfinance
 ta
+gTTS
 replicate
-python-multipart
