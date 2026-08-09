@@ -9,7 +9,7 @@
         body { background-color: #0d1117; color: #c9d1d9; font-family: monospace; padding: 15px; max-width: 800px; margin: auto; }
         h1 { color: #58a6ff; font-size: 1.4rem; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
         .card { background: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-        button { background: #238636; color: #fff; border: none; padding: 14px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; }
+        button { background: #238636; color: #fff; border: none; padding: 14px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; margin-bottom: 8px; }
         button.active { background: #da3633; }
         #status { font-size: 0.9rem; color: #8b949e; margin-top: 10px; text-align: center; }
         #chat-log { height: 280px; overflow-y: auto; background: #010409; padding: 12px; border-radius: 6px; border: 1px solid #30363d; margin-bottom: 10px; white-space: pre-wrap; }
@@ -20,10 +20,11 @@
     </style>
 </head>
 <body>
-    <h1>JARVIS Voice & Multimodal Terminal</h1>
+    <h1>JARVIS Multimodal Terminal</h1>
     
     <div class="card">
-        <button id="mic-btn" onclick="toggleVoice()">🎙️ Push to Talk</button>
+        <button id="mic-btn" onclick="toggleWebSpeech()">🎙️ Push to Talk (WebSpeech)</button>
+        <button id="record-btn" onclick="toggleMediaRecorder()">🔴 Record Audio (Whisper Fallback)</button>
         <div id="status">Status: Standby</div>
     </div>
 
@@ -37,98 +38,135 @@
         const mediaOutput = document.getElementById('media-output');
         const status = document.getElementById('status');
         const micBtn = document.getElementById('mic-btn');
-        let recognizing = false;
+        const recordBtn = document.getElementById('record-btn');
+        
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
 
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            status.innerText = "Error: Speech Recognition API not supported in this browser. Use Chrome or Brave.";
+        // 1. WHISPER AUDIO FALLBACK
+        async function toggleMediaRecorder() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const formData = new FormData();
+                        formData.append('file', audioBlob, 'voice.wav');
+
+                        status.innerText = "Status: Transcribing via Whisper...";
+                        try {
+                            const res = await fetch('/transcribe', { method: 'POST', body: formData });
+                            const data = await res.json();
+                            if (data.text) {
+                                sendChat(data.text);
+                            } else {
+                                status.innerText = "Transcription Error";
+                            }
+                        } catch(e) {
+                            status.innerText = "Server Error during transcription";
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.innerText = "⏹️ Stop Recording & Send";
+                    recordBtn.classList.add("active");
+                    status.innerText = "Status: Recording audio directly...";
+                } catch(err) {
+                    status.innerText = "Mic Error: " + err.message;
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.innerText = "🔴 Record Audio (Whisper Fallback)";
+                recordBtn.classList.remove("active");
+            }
         }
 
-        const recognition = SpeechRecognition ? new SpeechRecognition() : null;
-        if (recognition) {
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
+        // 2. CHAT ROUTER AND RENDERING
+        async function sendChat(message) {
+            appendLog("User", message);
+            status.innerText = "Status: JARVIS responding...";
 
-            recognition.onstart = () => { status.innerText = "Status: Listening... Speak now."; };
-            recognition.onerror = (e) => { 
-                status.innerText = "Speech Error: " + e.error; 
-                resetButton();
-            };
-            recognition.onend = () => { if (recognizing) status.innerText = "Status: Processing audio..."; };
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
 
-            recognition.onresult = async (event) => {
-                const transcript = event.results[0][0].transcript.trim();
-                if (!transcript) return;
+                const data = await response.json();
+                appendLog("JARVIS", data.reply);
 
-                appendLog("User", transcript);
-                status.innerText = "Status: JARVIS responding...";
-
-                try {
-                    const response = await fetch('/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: transcript })
-                    });
-
-                    const data = await response.json();
-                    appendLog("JARVIS", data.reply);
-
-                    if (data.reply.includes("http")) {
-                        const urlMatch = data.reply.match(/(https?:\/\/[^\s]+)/g);
-                        if (urlMatch) {
-                            const url = urlMatch[0];
-                            if (url.includes(".mp4")) {
-                                mediaOutput.innerHTML = `<video src="${url}" controls autoplay loop></video>`;
-                            } else {
-                                mediaOutput.innerHTML = `<img src="${url}" alt="Rendered Media">`;
-                            }
+                if (data.reply.includes("http")) {
+                    const urlMatch = data.reply.match(/(https?:\/\/[^\s]+)/g);
+                    if (urlMatch) {
+                        const url = urlMatch[0];
+                        if (url.includes(".mp4")) {
+                            mediaOutput.innerHTML = `<video src="${url}" controls autoplay loop></video>`;
+                        } else {
+                            mediaOutput.innerHTML = `<img src="${url}" alt="Rendered Media">`;
                         }
                     }
-
-                    if ('speechSynthesis' in window) {
-                        const speakableText = data.reply.replace(/(https?:\/\/[^\s]+)/g, "Media rendered on screen.");
-                        window.speechSynthesis.cancel();
-                        window.speechSynthesis.speak(new SpeechSynthesisUtterance(speakableText));
-                    }
-
-                } catch (err) {
-                    status.innerText = "Error reaching JARVIS backend.";
-                } finally {
-                    resetButton();
                 }
+
+                if ('speechSynthesis' in window) {
+                    const speakableText = data.reply.replace(/(https?:\/\/[^\s]+)/g, "Media rendered on screen.");
+                    window.speechSynthesis.cancel();
+                    window.speechSynthesis.speak(new SpeechSynthesisUtterance(speakableText));
+                }
+
+            } catch (err) {
+                status.innerText = "Error reaching JARVIS backend.";
+            } finally {
+                status.innerText = "Status: Standby";
+            }
+        }
+
+        // 3. WEBSPEECH API IMPLEMENTATION
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = SpeechRecognition ? new SpeechRecognition() : null;
+        let recognizing = false;
+
+        if (recognition) {
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+            recognition.onstart = () => { status.innerText = "Status: Listening..."; };
+            recognition.onerror = (e) => { 
+                status.innerText = "Speech Error: " + e.error + " (Use Whisper Fallback)";
+                recognizing = false;
+                micBtn.innerText = "🎙️ Push to Talk (WebSpeech)";
+                micBtn.classList.remove("active");
+            };
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript.trim();
+                recognizing = false;
+                micBtn.innerText = "🎙️ Push to Talk (WebSpeech)";
+                micBtn.classList.remove("active");
+                if (transcript) sendChat(transcript);
             };
         }
 
-        function toggleVoice() {
+        function toggleWebSpeech() {
             if (!recognition) {
-                status.innerText = "Speech Recognition not available.";
+                status.innerText = "WebSpeech unavailable. Use Whisper Fallback.";
                 return;
             }
             if (!recognizing) {
-                try {
-                    if ('speechSynthesis' in window) {
-                        window.speechSynthesis.cancel();
-                    }
-                    recognition.start();
-                    recognizing = true;
-                    micBtn.innerText = "🛑 Recording... (Tap when done)";
-                    micBtn.classList.add("active");
-                } catch(e) {
-                    status.innerText = "Mic Error: " + e.message;
-                }
+                recognition.start();
+                recognizing = true;
+                micBtn.innerText = "🛑 Stop";
+                micBtn.classList.add("active");
             } else {
                 recognition.stop();
-                resetButton();
-            }
-        }
-
-        function resetButton() {
-            recognizing = false;
-            micBtn.innerText = "🎙️ Push to Talk";
-            micBtn.classList.remove("active");
-            if (status.innerText.includes("Listening") || status.innerText.includes("Processing")) {
-                status.innerText = "Status: Standby";
+                recognizing = false;
+                micBtn.innerText = "🎙️ Push to Talk (WebSpeech)";
+                micBtn.classList.remove("active");
             }
         }
 
