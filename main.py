@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import os, requests, urllib.parse, base64
+import os, requests, urllib.parse, base64, sqlite3, json
 import pandas as pd
 import yfinance as yf
 from ta.momentum import RSIIndicator
@@ -25,7 +25,7 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Default "Rachel" Voice
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
 ASSET_MAP = {
     "gold": "XAUUSD=X", "xau": "XAUUSD=X",
@@ -34,12 +34,42 @@ ASSET_MAP = {
     "us30": "^DJI", "dow": "^DJI"
 }
 
+# --- DATABASE SETUP (PERSISTENT MEMORY STORE) ---
+DB_FILE = "jarvis_memory.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT,
+            content TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_lot', '0.10')")
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('risk_reward', '1:2')")
+    conn.commit()
+    conn.close()
+
+init_db()
+
 class ChatRequest(BaseModel):
     message: str
-    history: Optional[List[Dict[str, Any]]] = []
 
 class TTSRequest(BaseModel):
     text: str
+
+class SettingsRequest(BaseModel):
+    default_lot: str
+    risk_reward: str
 
 class TradeExecutionRequest(BaseModel):
     symbol: str
@@ -48,6 +78,38 @@ class TradeExecutionRequest(BaseModel):
     stop_loss: float
     take_profit: float
 
+def get_db_setting(key: str, default: str) -> str:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key=?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else default
+    except:
+        return default
+
+def save_chat_memory(role: str, content: str):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO history (role, content) VALUES (?, ?)", (role, content))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Log Error: {e}")
+
+def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT role, content FROM history ORDER BY id DESC LIMIT ?", (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+    except:
+        return []
+
 # --- 0. ROOT ROUTE ---
 @app.get("/")
 def home():
@@ -55,20 +117,42 @@ def home():
         return FileResponse("index.html", media_type="text/html")
     return {"status": "JARVIS Core Online", "error": "index.html not found"}
 
-# --- 1. ELEVENLABS TEXT-TO-SPEECH (TTS) ENDPOINT ---
+# --- 1. MEMORY ROUTES ---
+@app.post("/memory/settings")
+def update_settings(payload: SettingsRequest):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_lot', ?)", (payload.default_lot,))
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('risk_reward', ?)", (payload.risk_reward,))
+    conn.commit()
+    conn.close()
+    return {"status": "SUCCESS", "message": "Risk settings updated."}
+
+@app.get("/memory/settings")
+def get_settings():
+    return {
+        "default_lot": get_db_setting("default_lot", "0.10"),
+        "risk_reward": get_db_setting("risk_reward", "1:2")
+    }
+
+@app.delete("/memory/reset")
+def reset_memory():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM history")
+    conn.commit()
+    conn.close()
+    return {"status": "SUCCESS", "message": "Conversation memory reset."}
+
+# --- 2. ELEVENLABS & VISION ENDPOINTS ---
 @app.post("/tts/speak")
 def generate_speech(payload: TTSRequest):
-    """Converts response text into natural, realistic speech via ElevenLabs API."""
     if not ELEVENLABS_API_KEY:
-        raise HTTPException(status_code=400, detail="ELEVENLABS_API_KEY environment variable missing.")
+        raise HTTPException(status_code=400, detail="ELEVENLABS_API_KEY missing.")
 
-    clean_text = payload.text[:500]  # Limit length for performance & tier protection
+    clean_text = payload.text[:500]
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-    
-    headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json"
-    }
+    headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
     data = {
         "text": clean_text,
         "model_id": "eleven_flash_v2_5",
@@ -83,16 +167,15 @@ def generate_speech(payload: TTSRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 2. VISION CHART ANALYZER ENDPOINT ---
 @app.post("/analyze-chart")
 async def analyze_chart(file: UploadFile = File(...)):
-    """Analyzes trading charts, screenshots, or visual data via Groq Multimodal Vision."""
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
 
     file_bytes = await file.read()
     base64_image = base64.b64encode(file_bytes).decode("utf-8")
-    data_url = f"data:{file.content_type or 'image/jpeg'};base64,{base64_image}"
+    mime_type = file.content_type or "image/jpeg"
+    data_url = f"data:{mime_type};base64,{base64_image}"
 
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -100,12 +183,12 @@ async def analyze_chart(file: UploadFile = File(...)):
     }
     
     payload = {
-        "model": "llama-3.2-11b-vision-preview",
+        "model": "llama-3.2-90b-vision-preview",
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this trading chart or image carefully. Identify key support/resistance levels, visual patterns, indicator status, and provide a clear setup recommendation."},
+                    {"type": "text", "text": "Analyze this trading chart image. Identify key support, resistance, technical pattern, and clear trade recommendations."},
                     {"type": "image_url", "image_url": {"url": data_url}}
                 ]
             }
@@ -113,16 +196,32 @@ async def analyze_chart(file: UploadFile = File(...)):
     }
 
     try:
-        res = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=20)
+        res = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
         res_data = res.json()
-        if "choices" not in res_data:
-            raise HTTPException(status_code=500, detail=f"Groq Vision Error: {res_data}")
+        
+        if "choices" in res_data:
+            analysis = res_data["choices"][0]["message"]["content"]
+            save_chat_memory("user", "[Uploaded Chart Image]")
+            save_chat_memory("assistant", analysis)
+            return {"analysis": analysis}
+        
+        # Fallback Vision Model Execution
+        payload["model"] = "llama-3.2-11b-vision-instruct"
+        res_fallback = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
+        res_fb_data = res_fallback.json()
+        
+        if "choices" in res_fb_data:
+            analysis = res_fb_data["choices"][0]["message"]["content"]
+            save_chat_memory("user", "[Uploaded Chart Image]")
+            save_chat_memory("assistant", analysis)
+            return {"analysis": analysis}
 
-        return {"analysis": res_data["choices"][0]["message"]["content"]}
+        return {"analysis": f"Groq Error: {res_data}"}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 3. MULTI-ASSET QUANTITATIVE ENGINE ---
+# --- 3. MULTI-ASSET QUANT ENGINE ---
 @app.get("/market/analytics")
 def get_market_analytics(asset: str = "gold"):
     try:
@@ -148,6 +247,8 @@ def get_market_analytics(asset: str = "gold"):
         change = round(latest_price - day_open, 2)
         pct_change = round((change / day_open) * 100, 2)
 
+        lot_size_setting = float(get_db_setting("default_lot", "0.10"))
+
         if latest_price >= ema_20:
             bias = "BULLISH (BUY SETUP)"
             entry = latest_price
@@ -169,80 +270,32 @@ def get_market_analytics(asset: str = "gold"):
             "ema_50": round(ema_50, 2),
             "bias": bias,
             "trade_setup": {
-                "lot_size": 0.10,
+                "lot_size": lot_size_setting,
                 "entry": entry,
                 "stop_loss": sl,
                 "take_profit": tp,
-                "risk_reward": "1:2"
+                "risk_reward": get_db_setting("risk_reward", "1:2")
             }
         }
     except Exception as e:
         return {"error": f"Failed to compute trade setup: {str(e)}"}
 
-# --- 4. MT5 EXECUTION & TRADINGVIEW WEBHOOK ---
-@app.post("/trade/execute")
-def execute_trade(trade: TradeExecutionRequest):
-    return {
-        "status": "ORDER_DISPATCHED",
-        "details": {
-            "symbol": trade.symbol,
-            "action": trade.action.upper(),
-            "lot_size": trade.lot_size,
-            "stop_loss": trade.stop_loss,
-            "take_profit": trade.take_profit
-        }
-    }
-
-@app.post("/webhook/tradingview")
-async def tradingview_webhook(request: Request):
-    payload = await request.json()
-    return {"status": "SUCCESS", "received_alert": payload}
-
-# --- 5. MEDIA GENERATION ENDPOINTS ---
-@app.get("/generate-image")
-def generate_image(prompt: str):
-    photo_prompt = f"A professional 8k photograph of {prompt}, shot on 35mm lens, realistic textures, studio lighting, photorealistic, sharp focus"
-    encoded = urllib.parse.quote(photo_prompt)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
-    return {"prompt": prompt, "image_url": image_url}
-
-@app.get("/generate-video")
-def generate_video(prompt: str):
-    if REPLICATE_API_TOKEN:
-        try:
-            import replicate
-            output = replicate.run(
-                "minimax/video-01",
-                input={"prompt": prompt, "prompt_optimizer": True}
-            )
-            return {"prompt": prompt, "video_url": output}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Replicate Video Error: {str(e)}")
-    
-    encoded = urllib.parse.quote(f"cinematic video frame of {prompt}, 8k, photorealistic")
-    return {
-        "prompt": prompt,
-        "video_render_url": f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=576&model=flux&nologo=true"
-    }
-
-# --- 6. MULTIMODAL CHAT ROUTER ---
+# --- 4. MULTIMODAL CHAT ROUTER ---
 @app.post("/chat")
 def chat(payload: ChatRequest):
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing.")
 
     user_query = payload.message.lower()
+    save_chat_memory("user", payload.message)
 
     if any(k in user_query for k in ["image", "picture", "photo", "draw", "visualize", "render"]):
         photo_prompt = f"A professional 8k photograph of {payload.message}, shot on 35mm lens, realistic textures, studio lighting, photorealistic"
         encoded = urllib.parse.quote(photo_prompt)
         img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
-        return {"reply": f"Here is your photorealistic rendering:\n{img_url}"}
-
-    if any(k in user_query for k in ["video", "animate", "movie", "clip"]):
-        vid_res = generate_video(payload.message)
-        url = vid_res.get("video_url") or vid_res.get("video_render_url")
-        return {"reply": f"Here is your video generation link:\n{url}"}
+        reply = f"Here is your photorealistic rendering:\n{img_url}"
+        save_chat_memory("assistant", reply)
+        return {"reply": reply}
 
     analytics_context = ""
     market_keywords = ["gold", "xau", "btc", "bitcoin", "eurusd", "us30", "dow", "market", "analysis", "setup", "set up", "trade", "buy", "sell"]
@@ -263,33 +316,29 @@ def chat(payload: ChatRequest):
                 f"\n[REAL-TIME MARKET SIGNAL - {data['asset']}]\n"
                 f"Asset: {data['asset']} | Current Price: ${data['price']} | Bias: {data['bias']}\n"
                 f"RSI (14): {data['rsi_14']} | EMA 20: ${data['ema_20']} | EMA 50: ${data['ema_50']}\n"
-                f"Calculated 0.10 Lot Position:\n"
+                f"Calculated {ts['lot_size']} Lot Position Parameters:\n"
                 f"• Entry Level: ${ts['entry']}\n"
                 f"• Stop Loss (SL): ${ts['stop_loss']}\n"
                 f"• Take Profit (TP): ${ts['take_profit']}\n"
                 f"• Risk-to-Reward: {ts['risk_reward']}\n"
-                f"INSTRUCTION: Use strictly these numerical values in your trade recommendation."
             )
 
+    lot_pref = get_db_setting("default_lot", "0.10")
+    rr_pref = get_db_setting("risk_reward", "1:2")
+
     system_prompt = (
-        "You are JARVIS, an elite quantitative analyst and AI assistant. "
-        "Keep responses professional, concise, direct, and focused."
+        f"You are JARVIS, an elite quantitative analyst. "
+        f"User Preferences: Default Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. "
+        f"Be direct, sharp, and concise."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
+    history_logs = fetch_recent_history(limit=6)
+    
+    for item in history_logs:
+        messages.append({"role": item["role"], "content": item["content"]})
 
-    if payload.history:
-        for item in payload.history:
-            if isinstance(item, dict) and "role" in item and "content" in item:
-                messages.append({"role": str(item["role"]), "content": str(item["content"])})
-
-    messages.append({"role": "user", "content": payload.message})
-
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     data = {"model": "llama-3.3-70b-versatile", "messages": messages}
 
     try:
@@ -298,11 +347,13 @@ def chat(payload: ChatRequest):
         if "choices" not in res_data:
             raise HTTPException(status_code=500, detail=f"Groq API Error: {res_data}")
 
-        return {"reply": res_data["choices"][0]["message"]["content"]}
+        reply = res_data["choices"][0]["message"]["content"]
+        save_chat_memory("assistant", reply)
+        return {"reply": reply}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 7. WHISPER AUDIO TRANSCRIPTION ---
+# --- 5. WHISPER TRANSCRIPTION ---
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     if not GROQ_API_KEY:
