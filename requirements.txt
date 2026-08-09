@@ -6,3 +6,4 @@ pandas
 yfinance
 ta
 replicate
+python-multipart
