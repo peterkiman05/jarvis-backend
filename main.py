@@ -61,6 +61,9 @@ def init_db():
 
 init_db()
 
+# --- IN-MEMORY MT5 TRADE QUEUE ---
+PENDING_TRADES: List[Dict[str, Any]] = []
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -77,6 +80,10 @@ class TradeExecutionRequest(BaseModel):
     lot_size: float = 0.10
     stop_loss: float
     take_profit: float
+
+class VideoModifyRequest(BaseModel):
+    prompt: str
+    image_url: Optional[str] = None
 
 def get_db_setting(key: str, default: str) -> str:
     try:
@@ -144,7 +151,116 @@ def reset_memory():
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
 
-# --- 2. ELEVENLABS & VISION ENDPOINTS ---
+# --- 2. PART 1: MT5 EXECUTION BRIDGE ENDPOINTS ---
+@app.post("/trade/execute")
+def execute_trade(trade: TradeExecutionRequest):
+    """Queues a trade for local MT5 bridge consumption."""
+    order_payload = {
+        "symbol": trade.symbol,
+        "action": trade.action.upper(),
+        "lot_size": trade.lot_size,
+        "stop_loss": trade.stop_loss,
+        "take_profit": trade.take_profit,
+        "status": "PENDING"
+    }
+    PENDING_TRADES.append(order_payload)
+    return {
+        "status": "ORDER_QUEUED",
+        "details": order_payload,
+        "message": f"Order {trade.action} on {trade.symbol} queued for MT5 execution."
+    }
+
+@app.get("/trade/pending")
+def get_pending_trades():
+    """Polled by local mt5_bridge.py script."""
+    global PENDING_TRADES
+    orders = PENDING_TRADES.copy()
+    PENDING_TRADES.clear()
+    return {"orders": orders}
+
+# --- 3. PART 2: AUTONOMOUS VIDEO ENGINE ---
+@app.post("/generate-video")
+def generate_video(payload: VideoModifyRequest):
+    """Generates or modifies videos using Replicate MiniMax or Pollinations dynamic frames."""
+    prompt = payload.prompt
+    image_url = payload.image_url
+
+    if REPLICATE_API_TOKEN:
+        try:
+            import replicate
+            input_data = {"prompt": prompt, "prompt_optimizer": True}
+            if image_url:
+                input_data["first_frame_image"] = image_url
+
+            output = replicate.run(
+                "minimax/video-01",
+                input=input_data
+            )
+            return {"prompt": prompt, "video_url": output}
+        except Exception as e:
+            pass
+
+    encoded = urllib.parse.quote(f"cinematic animation frame of {prompt}, photorealistic, 8k")
+    return {
+        "prompt": prompt,
+        "video_url": f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=576&model=flux&nologo=true"
+    }
+
+# --- 4. PART 3: MULTI-TIMEFRAME TECHNICAL SCANNER ---
+@app.get("/market/analytics/multi")
+def get_multi_timeframe_analytics(asset: str = "gold"):
+    """Scans across 15m, 1h, and 4h timeframes for alignment."""
+    try:
+        symbol_key = asset.lower().replace("/", "").replace(" ", "")
+        ticker_symbol = ASSET_MAP.get(symbol_key, "XAUUSD=X")
+        ticker = yf.Ticker(ticker_symbol)
+
+        timeframes = {"15m": "5d", "1h": "1mo", "1d": "3mo"}
+        results = {}
+        bullish_count = 0
+        bearish_count = 0
+
+        for tf, period in timeframes.items():
+            df = ticker.history(period=period, interval=tf)
+            if df.empty or len(df) < 20:
+                continue
+
+            rsi = round(RSIIndicator(close=df["Close"], window=14).rsi().iloc[-1], 2)
+            ema_20 = round(EMAIndicator(close=df["Close"], window=20).ema_indicator().iloc[-1], 2)
+            price = round(df["Close"].iloc[-1], 2)
+            bias = "BULLISH" if price >= ema_20 else "BEARISH"
+
+            if bias == "BULLISH":
+                bullish_count += 1
+            else:
+                bearish_count += 1
+
+            results[tf] = {"price": price, "rsi": rsi, "ema_20": ema_20, "bias": bias}
+
+        overall_bias = "STRONG BULLISH" if bullish_count > bearish_count else "STRONG BEARISH"
+        lot_size = float(get_db_setting("default_lot", "0.10"))
+        latest_price = list(results.values())[0]["price"] if results else 0.0
+
+        sl = round(latest_price * 0.995, 2) if "BULLISH" in overall_bias else round(latest_price * 1.005, 2)
+        tp = round(latest_price * 1.010, 2) if "BULLISH" in overall_bias else round(latest_price * 0.990, 2)
+
+        return {
+            "asset": asset.upper(),
+            "overall_bias": overall_bias,
+            "timeframe_breakdown": results,
+            "recommended_trade": {
+                "symbol": ticker_symbol,
+                "action": "BUY" if "BULLISH" in overall_bias else "SELL",
+                "lot_size": lot_size,
+                "entry": latest_price,
+                "stop_loss": sl,
+                "take_profit": tp
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- 5. VISION CHART ANALYZER & SPEECH ENDPOINTS ---
 @app.post("/tts/speak")
 def generate_speech(payload: TTSRequest):
     if not ELEVENLABS_API_KEY:
@@ -210,66 +326,7 @@ async def analyze_chart(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 3. MULTI-ASSET QUANT ENGINE ---
-@app.get("/market/analytics")
-def get_market_analytics(asset: str = "gold"):
-    try:
-        symbol_key = asset.lower().replace("/", "").replace(" ", "")
-        ticker_symbol = ASSET_MAP.get(symbol_key, "XAUUSD=X")
-        
-        ticker = yf.Ticker(ticker_symbol)
-        df = ticker.history(period="5d", interval="15m")
-
-        if df.empty and ticker_symbol == "XAUUSD=X":
-            ticker = yf.Ticker("GC=F")
-            df = ticker.history(period="5d", interval="15m")
-
-        if df.empty or len(df) < 50:
-            return {"error": f"Insufficient data for asset: {asset}"}
-
-        rsi = RSIIndicator(close=df["Close"], window=14).rsi().iloc[-1]
-        ema_20 = EMAIndicator(close=df["Close"], window=20).ema_indicator().iloc[-1]
-        ema_50 = EMAIndicator(close=df["Close"], window=50).ema_indicator().iloc[-1]
-
-        latest_price = round(df["Close"].iloc[-1], 2)
-        day_open = round(df["Open"].iloc[0], 2)
-        change = round(latest_price - day_open, 2)
-        pct_change = round((change / day_open) * 100, 2)
-
-        lot_size_setting = float(get_db_setting("default_lot", "0.10"))
-
-        if latest_price >= ema_20:
-            bias = "BULLISH (BUY SETUP)"
-            entry = latest_price
-            sl = round(latest_price * 0.995, 2)
-            tp = round(latest_price * 1.010, 2)
-        else:
-            bias = "BEARISH (SELL SETUP)"
-            entry = latest_price
-            sl = round(latest_price * 1.005, 2)
-            tp = round(latest_price * 0.990, 2)
-
-        return {
-            "asset": asset.upper(),
-            "symbol": ticker_symbol,
-            "price": latest_price,
-            "change_pct": f"{pct_change}%",
-            "rsi_14": round(rsi, 2),
-            "ema_20": round(ema_20, 2),
-            "ema_50": round(ema_50, 2),
-            "bias": bias,
-            "trade_setup": {
-                "lot_size": lot_size_setting,
-                "entry": entry,
-                "stop_loss": sl,
-                "take_profit": tp,
-                "risk_reward": get_db_setting("risk_reward", "1:2")
-            }
-        }
-    except Exception as e:
-        return {"error": f"Failed to compute trade setup: {str(e)}"}
-
-# --- 4. MULTIMODAL CHAT ROUTER ---
+# --- 6. MULTIMODAL CHAT ROUTER ---
 @app.post("/chat")
 def chat(payload: ChatRequest):
     if not GROQ_API_KEY:
@@ -278,6 +335,15 @@ def chat(payload: ChatRequest):
     user_query = payload.message.lower()
     save_chat_memory("user", payload.message)
 
+    # Video Handler Interceptor
+    if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video"]):
+        vid_res = generate_video(VideoModifyRequest(prompt=payload.message))
+        url = vid_res.get("video_url")
+        reply = f"Here is your video generation link:\n{url}"
+        save_chat_memory("assistant", reply)
+        return {"reply": reply}
+
+    # Image Generation Interceptor
     if any(k in user_query for k in ["image", "picture", "photo", "draw", "visualize", "render"]):
         photo_prompt = f"A professional 8k photograph of {payload.message}, shot on 35mm lens, realistic textures, studio lighting, photorealistic"
         encoded = urllib.parse.quote(photo_prompt)
@@ -298,27 +364,35 @@ def chat(payload: ChatRequest):
         elif "us30" in user_query or "dow" in user_query:
             target_asset = "us30"
 
-        data = get_market_analytics(asset=target_asset)
-        if "price" in data and "trade_setup" in data:
-            ts = data["trade_setup"]
+        data = get_multi_timeframe_analytics(asset=target_asset)
+        if "recommended_trade" in data:
+            rec = data["recommended_trade"]
             analytics_context = (
-                f"\n[REAL-TIME MARKET SIGNAL - {data['asset']}]\n"
-                f"Asset: {data['asset']} | Current Price: ${data['price']} | Bias: {data['bias']}\n"
-                f"RSI (14): {data['rsi_14']} | EMA 20: ${data['ema_20']} | EMA 50: ${data['ema_50']}\n"
-                f"Calculated {ts['lot_size']} Lot Position Parameters:\n"
-                f"• Entry Level: ${ts['entry']}\n"
-                f"• Stop Loss (SL): ${ts['stop_loss']}\n"
-                f"• Take Profit (TP): ${ts['take_profit']}\n"
-                f"• Risk-to-Reward: {ts['risk_reward']}\n"
+                f"\n[MULTI-TIMEFRAME ANALYSIS - {data['asset']}]\n"
+                f"Overall Bias: {data['overall_bias']}\n"
+                f"Timeframe Breakdown: {json.dumps(data['timeframe_breakdown'])}\n"
+                f"Recommended Setup ({rec['lot_size']} Lot):\n"
+                f"• Action: {rec['action']} @ ${rec['entry']}\n"
+                f"• SL: ${rec['stop_loss']} | TP: ${rec['take_profit']}\n"
             )
+
+            # Auto-queue trade if explicitly commanded
+            if "execute" in user_query or "place trade" in user_query:
+                execute_trade(TradeExecutionRequest(
+                    symbol=rec["symbol"],
+                    action=rec["action"],
+                    lot_size=rec["lot_size"],
+                    stop_loss=rec["stop_loss"],
+                    take_profit=rec["take_profit"]
+                ))
+                analytics_context += "\n[ACTION: ORDER DISPATCHED TO MT5 QUEUE]"
 
     lot_pref = get_db_setting("default_lot", "0.10")
     rr_pref = get_db_setting("risk_reward", "1:2")
 
     system_prompt = (
-        f"You are JARVIS, an elite quantitative analyst. "
-        f"User Preferences: Default Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. "
-        f"Be direct, sharp, and concise."
+        f"You are JARVIS, an elite quantitative analyst and autonomous trader. "
+        f"Preferences: Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. Be sharp and direct."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
@@ -342,7 +416,7 @@ def chat(payload: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 5. WHISPER TRANSCRIPTION ---
+# --- 7. WHISPER TRANSCRIPTION ---
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     if not GROQ_API_KEY:
@@ -366,3 +440,4 @@ async def transcribe(file: UploadFile = File(...)):
         return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+ 
