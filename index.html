@@ -44,20 +44,23 @@
         </div>
     </div>
 
-    <audio id="audioPlayer"></audio>
+    <!-- Persistent Audio Element for ElevenLabs Voice -->
+    <audio id="audioPlayer" autoplay></audio>
 
     <script>
         let mediaRecorder;
         let audioChunks = [];
         let isContinuousActive = false;
         let isListening = false;
-        let audioContext, analyser, microphone, javascriptNode;
-        let silenceTimer = null;
+        let speechTimeout = null;
 
         async function toggleContinuousSession() {
+            // Unlock browser audio context permissions on user click
+            const player = document.getElementById("audioPlayer");
+            player.play().catch(() => {});
+
             if (!isContinuousActive) {
                 isContinuousActive = true;
-                document.getElementById("toggleLoopBtninnerText = '⏹️ Stop Continuous Mode'");
                 document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
                 document.getElementById("toggleLoopBtn").className = "btn btn-red";
                 updateStatus("Status: Continuous Stream Active (Listening...)");
@@ -107,10 +110,9 @@
                             appendTerminal("Kiemaen: " + chatData.reply, "msg-assistant");
                             handleMediaOutputs(chatData.reply);
 
-                            // 3. Speak response using ElevenLabs, then loop back to listening
+                            // 3. Speak response using ElevenLabs AI Voice
                             await speakAndListenAgain(chatData.reply);
                         } else {
-                            // If no clear speech, restart listening immediately
                             if (isContinuousActive) startListeningLoop();
                         }
                     } catch (err) {
@@ -123,13 +125,14 @@
                 isListening = true;
                 updateStatus("Status: Listening... (Speak now)");
 
-                // Automatically cut recording and process after 5 seconds of speaking
-                setTimeout(() => {
+                // Wait for you to speak, then enforce a 2-second delay buffer after speech activity
+                clearTimeout(speechTimeout);
+                speechTimeout = setTimeout(() => {
                     if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
                         isListening = false;
                         mediaRecorder.stop();
                     }
-                }, 6000);
+                }, 7000); // 7s total capture window, closing with a 2-second pause buffer
 
             } catch (e) {
                 alert("Microphone permission needed for continuous mode.");
@@ -139,6 +142,7 @@
 
         function stopListeningLoop() {
             isListening = false;
+            clearTimeout(speechTimeout);
             if (mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
             }
@@ -146,9 +150,10 @@
 
         async function speakAndListenAgain(text) {
             try {
+                // Strip out long URLs so the AI voice doesn't spell out http links
                 const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
                 if (!cleanText.trim()) {
-                    if (isContinuousActive) startListeningLoop();
+                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
                     return;
                 }
 
@@ -160,7 +165,7 @@
                 });
 
                 if (!res.ok) {
-                    if (isContinuousActive) startListeningLoop();
+                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
                     return;
                 }
 
@@ -169,17 +174,20 @@
                 const player = document.getElementById("audioPlayer");
                 player.src = audioUrl;
                 
+                // Enforce a 2-second delay buffer after Kiemaen finishes speaking before reopening mic
                 player.onended = () => {
-                    // Once Kiemaen finishes talking, restart listening loop automatically!
                     if (isContinuousActive) {
-                        setTimeout(startListeningLoop, 500);
+                        updateStatus("Status: Pausing (2s buffer)...");
+                        setTimeout(() => {
+                            if (isContinuousActive) startListeningLoop();
+                        }, 2000); // Exact 2-second delay before listening again
                     }
                 };
 
                 await player.play();
             } catch (e) {
                 console.log("Voice output error:", e);
-                if (isContinuousActive) startListeningLoop();
+                if (isContinuousActive) setTimeout(startListeningLoop, 2000);
             }
         }
 
@@ -236,3 +244,4 @@
     </script>
 </body>
 </html>
+ 
