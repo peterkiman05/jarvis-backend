@@ -26,7 +26,7 @@
         <h2 style="text-align: center; color: #58a6ff; margin: 5px 0;">KIEMAEN VOICE STREAM</h2>
         
         <div class="card">
-            <button class="btn btn-purple" onclick="testVoice()">🔊 Test Voice Output Now</button>
+            <button class="btn btn-purple" onclick="testAudioUnlock()">🔊 Tap to Unlock Audio</button>
             <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous AI Voice Mode</button>
             <input type="text" id="textInput" placeholder="Type text fallback..." onkeydown="if(event.key==='Enter') sendText()">
             <button class="btn btn-blue" onclick="sendText()">Send Text</button>
@@ -36,7 +36,7 @@
 
         <div class="card">
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Continuous voice engine online. Click 'Test Voice Output Now' first to unlock audio.</div>
+                <div class="msg-assistant">Kiemaen: Continuous voice engine online. Tap 'Tap to Unlock Audio' first.</div>
             </div>
         </div>
 
@@ -46,6 +46,9 @@
         </div>
     </div>
 
+    <!-- Persistent Audio Player -->
+    <audio id="audioPlayer" style="display:none;"></audio>
+
     <script>
         let mediaRecorder;
         let audioChunks = [];
@@ -53,20 +56,24 @@
         let isListening = false;
         let speechTimeout = null;
 
-        function testVoice() {
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance("Audio systems unlocked. Kiemaen is ready.");
-                utterance.rate = 1.0;
-                window.speechSynthesis.speak(utterance);
+        async function testAudioUnlock() {
+            try {
+                const res = await fetch('/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: "Audio unlocked successfully." })
+                });
+                const blob = await res.blob();
+                const player = document.getElementById("audioPlayer");
+                player.src = URL.createObjectURL(blob);
+                await player.play();
                 updateStatus("Status: Audio Unlocked!");
-            } else {
-                alert("Speech synthesis not supported on this browser.");
+            } catch (e) {
+                alert("Audio unlock failed: " + e.message);
             }
         }
 
         function toggleContinuousSession() {
-            testVoice(); // Unlock audio on toggle click
             if (!isContinuousActive) {
                 isContinuousActive = true;
                 document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
@@ -116,7 +123,7 @@
                             appendTerminal("Kiemaen: " + chatData.reply, "msg-assistant");
                             handleMediaOutputs(chatData.reply);
 
-                            speakAndListenAgain(chatData.reply);
+                            await speakAndListenAgain(chatData.reply);
                         } else {
                             if (isContinuousActive) startListeningLoop();
                         }
@@ -152,7 +159,7 @@
             }
         }
 
-        function speakAndListenAgain(text) {
+        async function speakAndListenAgain(text) {
             const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
             if (!cleanText.trim()) {
                 if (isContinuousActive) setTimeout(startListeningLoop, 2000);
@@ -160,27 +167,37 @@
             }
 
             updateStatus("Status: Kiemaen is speaking...");
-            
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(cleanText);
-                utterance.rate = 1.0;
 
-                utterance.onend = () => {
+            try {
+                const res = await fetch('/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: cleanText })
+                });
+
+                if (!res.ok) {
+                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                    return;
+                }
+
+                const blob = await res.blob();
+                const audioUrl = URL.createObjectURL(blob);
+                const player = document.getElementById("audioPlayer");
+                player.src = audioUrl;
+
+                player.onended = () => {
                     if (isContinuousActive) {
                         updateStatus("Status: Pausing (2s buffer)...");
+                        // Exact 2-second delay buffer before listening again
                         setTimeout(() => {
                             if (isContinuousActive) startListeningLoop();
-                        }, 2000); // 2-second delay buffer before listening again
+                        }, 2000);
                     }
                 };
 
-                utterance.onerror = () => {
-                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
-                };
-
-                window.speechSynthesis.speak(utterance);
-            } else {
+                await player.play();
+            } catch (e) {
+                console.log("Voice output error:", e);
                 if (isContinuousActive) setTimeout(startListeningLoop, 2000);
             }
         }
