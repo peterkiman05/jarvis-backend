@@ -64,7 +64,7 @@
             if (!file) return;
 
             appendLog("User", `[Uploaded Chart Image: ${file.name}]`);
-            status.innerText = "Status: Analyzing chart screenshot via Vision...";
+            status.innerText = "Status: Analyzing chart screenshot via Qwen Vision...";
 
             const formData = new FormData();
             formData.append('file', file);
