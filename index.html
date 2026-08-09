@@ -27,7 +27,7 @@
         
         <div class="card">
             <button class="btn btn-purple" onclick="testAudioUnlock()">🔊 Tap to Unlock Audio</button>
-            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (12s Window)</button>
+            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (12s Buffer)</button>
             <input type="text" id="textInput" placeholder="Ask engineering, trading, or animated video requests..." onkeydown="if(event.key==='Enter') sendText()">
             <button class="btn btn-blue" onclick="sendText()">Send Command</button>
             <button class="btn btn-red" onclick="clearMemory()">🧹 Clear Memory</button>
@@ -36,7 +36,7 @@
 
         <div class="card">
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Omni-engine online. Extended listening buffer and dynamic video generation enabled.</div>
+                <div class="msg-assistant">Kiemaen: Omni-engine online. 12-second speech window active. Ready for video generation and modules.</div>
             </div>
         </div>
 
@@ -60,7 +60,7 @@
                 const res = await fetch('/tts/speak', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: "Audio unlocked." })
+                    body: JSON.stringify({ text: "Audio unlocked successfully." })
                 });
                 const blob = await res.blob();
                 const player = document.getElementById("audioPlayer");
@@ -77,12 +77,12 @@
                 isContinuousActive = true;
                 document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Omni-Mode";
                 document.getElementById("toggleLoopBtn").className = "btn btn-red";
-                updateStatus("Status: Listening live...");
+                updateStatus("Status: Listening live (12s window)...");
                 startListeningLoop();
             } else {
                 isContinuousActive = false;
                 stopListeningLoop();
-                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (12s Window)";
+                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (12s Buffer)";
                 document.getElementById("toggleLoopBtn").className = "btn btn-green";
                 updateStatus("Status: Standby");
             }
@@ -134,9 +134,9 @@
 
                 mediaRecorder.start();
                 isListening = true;
-                updateStatus("Status: Listening closely (12s window)...");
+                updateStatus("Status: Listening closely (Speak fully)...");
 
-                // Extended speech window to 12 seconds so you have plenty of time to talk fully before responding
+                // 12-second speech window allows you to speak longer sentences before processing
                 clearTimeout(speechTimeout);
                 speechTimeout = setTimeout(() => {
                     if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
