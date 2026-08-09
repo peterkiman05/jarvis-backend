@@ -2,8 +2,8 @@ fastapi
 uvicorn
 requests
 pydantic
-python-multipart
-yfinance
 pandas
+yfinance
 ta
+sqlite3
 replicate
