@@ -155,21 +155,22 @@ def generate_video(payload: VideoModifyRequest):
     prompt = payload.prompt
     image_url = payload.image_url
 
-    if REPLICATE_API_TOKEN:
-        try:
-            import replicate
-            os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
-            input_data = {"prompt": prompt, "prompt_optimizer": True}
-            if image_url:
-                input_data["first_frame_image"] = image_url
+    if not REPLICATE_API_TOKEN:
+        raise HTTPException(status_code=400, detail="REPLICATE_API_TOKEN missing on server environment.")
 
-            output = replicate.run("minimax/video-01", input=input_data)
-            video_url = output.url if hasattr(output, "url") else str(output)
-            return {"prompt": prompt, "video_url": video_url}
-        except Exception as e:
-            print(f"Replicate Exception: {e}")
+    try:
+        import replicate
+        os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
+        input_data = {"prompt": prompt, "prompt_optimizer": True}
+        if image_url:
+            input_data["first_frame_image"] = image_url
 
-    return {"prompt": prompt, "video_url": "https://www.w3schools.com/html/mov_bbb.mp4"}
+        # Runs Replicate MiniMax video-01 model
+        output = replicate.run("minimax/video-01", input=input_data)
+        video_url = output.url if hasattr(output, "url") else str(output)
+        return {"prompt": prompt, "video_url": video_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Replicate Error: {str(e)}")
 
 @app.post("/invention/evolve")
 def evolve_invention(payload: InventionProjectRequest):
@@ -241,10 +242,10 @@ def chat(payload: ChatRequest):
     user_query = payload.message.lower()
     save_chat_memory("user", payload.message)
 
-    if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video"]):
+    if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video", "short story", "storyboard"]):
         vid_res = generate_video(VideoModifyRequest(prompt=payload.message))
         url = vid_res.get("video_url")
-        reply = f"Here is your generated video stream:\n{url}"
+        reply = f"Generated cinematic video stream for your prompt:\n{url}"
         save_chat_memory("assistant", reply)
         return {"reply": reply}
 
@@ -252,7 +253,7 @@ def chat(payload: ChatRequest):
         photo_prompt = f"A professional 8k photograph of {payload.message}, shot on 35mm lens, realistic textures, studio lighting, photorealistic"
         encoded = urllib.parse.quote(photo_prompt)
         img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
-        reply = f"Here is your photorealistic rendering:\n{img_url}"
+        reply = f"Photorealistic rendering created:\n{img_url}"
         save_chat_memory("assistant", reply)
         return {"reply": reply}
 
