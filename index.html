@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kiemaen - General Autonomous AI Terminal</title>
+    <title>Kiemaen - Omni Autonomous Terminal</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: monospace; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 10px; }
@@ -27,8 +27,8 @@
         
         <div class="card">
             <button class="btn btn-purple" onclick="testAudioUnlock()">🔊 Tap to Unlock Audio</button>
-            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode</button>
-            <input type="text" id="textInput" placeholder="Ask engineering, trading, story, or invention queries..." onkeydown="if(event.key==='Enter') sendText()">
+            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (12s Window)</button>
+            <input type="text" id="textInput" placeholder="Ask engineering, trading, or animated video requests..." onkeydown="if(event.key==='Enter') sendText()">
             <button class="btn btn-blue" onclick="sendText()">Send Command</button>
             <button class="btn btn-red" onclick="clearMemory()">🧹 Clear Memory</button>
             <div id="status" class="status">Status: Standby</div>
@@ -36,7 +36,7 @@
 
         <div class="card">
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Omni-engine online. Ready for engineering modules, animated shorts, trading setups, and invention blueprints.</div>
+                <div class="msg-assistant">Kiemaen: Omni-engine online. Extended listening buffer and dynamic video generation enabled.</div>
             </div>
         </div>
 
@@ -60,7 +60,7 @@
                 const res = await fetch('/tts/speak', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: "Audio unlocked. Omni-systems active." })
+                    body: JSON.stringify({ text: "Audio unlocked." })
                 });
                 const blob = await res.blob();
                 const player = document.getElementById("audioPlayer");
@@ -82,7 +82,7 @@
             } else {
                 isContinuousActive = false;
                 stopListeningLoop();
-                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode";
+                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (12s Window)";
                 document.getElementById("toggleLoopBtn").className = "btn btn-green";
                 updateStatus("Status: Standby");
             }
@@ -134,15 +134,16 @@
 
                 mediaRecorder.start();
                 isListening = true;
-                updateStatus("Status: Listening... (Speak now)");
+                updateStatus("Status: Listening closely (12s window)...");
 
+                // Extended speech window to 12 seconds so you have plenty of time to talk fully before responding
                 clearTimeout(speechTimeout);
                 speechTimeout = setTimeout(() => {
                     if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
                         isListening = false;
                         mediaRecorder.stop();
                     }
-                }, 6000);
+                }, 12000);
 
             } catch (e) {
                 alert("Microphone permission needed.");
