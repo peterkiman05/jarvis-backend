@@ -9,22 +9,25 @@
         body { background-color: #0d1117; color: #c9d1d9; font-family: monospace; padding: 15px; max-width: 800px; margin: auto; }
         h1 { color: #58a6ff; font-size: 1.4rem; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
         .card { background: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-        button { background: #238636; color: #fff; border: none; padding: 14px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; margin-bottom: 8px; }
+        button { background: #238636; color: #fff; border: none; padding: 12px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; margin-bottom: 8px; }
         button.active { background: #da3633; }
+        .btn-secondary { background: #1f6feb; }
         #status { font-size: 0.9rem; color: #8b949e; margin-top: 10px; text-align: center; }
         #chat-log { height: 280px; overflow-y: auto; background: #010409; padding: 12px; border-radius: 6px; border: 1px solid #30363d; margin-bottom: 10px; white-space: pre-wrap; }
         .user { color: #79c0ff; margin: 8px 0; font-weight: bold; }
         .jarvis { color: #7ee787; margin: 8px 0; }
         .media-container { text-align: center; margin-top: 10px; }
         img, video { max-width: 100%; border-radius: 8px; border: 1px solid #30363d; margin-top: 8px; }
+        input[type="file"] { display: none; }
     </style>
 </head>
 <body>
     <h1>JARVIS Multimodal Terminal</h1>
     
     <div class="card">
-        <button id="mic-btn" onclick="toggleWebSpeech()">🎙️ Push to Talk (WebSpeech)</button>
-        <button id="record-btn" onclick="toggleMediaRecorder()">🔴 Record Audio (Whisper Fallback)</button>
+        <button id="record-btn" onclick="toggleMediaRecorder()">🔴 Record Audio (Whisper)</button>
+        <button class="btn-secondary" onclick="document.getElementById('chart-input').click()">🖼️ Upload Chart / Image Analysis</button>
+        <input type="file" id="chart-input" accept="image/*" onchange="uploadChart(event)">
         <div id="status">Status: Standby</div>
     </div>
 
@@ -37,23 +40,45 @@
         const chatLog = document.getElementById('chat-log');
         const mediaOutput = document.getElementById('media-output');
         const status = document.getElementById('status');
-        const micBtn = document.getElementById('mic-btn');
         const recordBtn = document.getElementById('record-btn');
         
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
 
-        // 1. WHISPER AUDIO FALLBACK (DYNAMIC MIME TYPES)
+        // 1. VISION / CHART IMAGE ANALYSIS UPLOAD
+        async function uploadChart(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            appendLog("User", `[Uploaded Chart Image: ${file.name}]`);
+            status.innerText = "Status: Analyzing chart screenshot via Vision...";
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/analyze-chart', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.analysis) {
+                    appendLog("JARVIS", data.analysis);
+                    speakText(data.analysis);
+                } else {
+                    appendLog("JARVIS", "Failed to analyze image.");
+                }
+            } catch(e) {
+                status.innerText = "Error analyzing chart image.";
+            } finally {
+                status.innerText = "Status: Standby";
+            }
+        }
+
+        // 2. WHISPER AUDIO RECORDING
         async function toggleMediaRecorder() {
             if (!isRecording) {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    
-                    let mimeType = 'audio/webm';
-                    if (!MediaRecorder.isTypeSupported('audio/webm')) {
-                        mimeType = '';
-                    }
+                    let mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
 
                     mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
                     audioChunks = [];
@@ -77,7 +102,7 @@
                             if (data.text) {
                                 sendChat(data.text);
                             } else {
-                                status.innerText = "Transcription Error: " + JSON.stringify(data);
+                                status.innerText = "Transcription Error";
                             }
                         } catch(e) {
                             status.innerText = "Server Error during transcription";
@@ -95,12 +120,12 @@
             } else {
                 mediaRecorder.stop();
                 isRecording = false;
-                recordBtn.innerText = "🔴 Record Audio (Whisper Fallback)";
+                recordBtn.innerText = "🔴 Record Audio (Whisper)";
                 recordBtn.classList.remove("active");
             }
         }
 
-        // 2. CHAT ROUTER AND RENDERING
+        // 3. CHAT ROUTER & MEDIA RENDER
         async function sendChat(message) {
             appendLog("User", message);
             status.innerText = "Status: JARVIS responding...";
@@ -127,11 +152,7 @@
                     }
                 }
 
-                if ('speechSynthesis' in window) {
-                    const speakableText = data.reply.replace(/(https?:\/\/[^\s]+)/g, "Media rendered on screen.");
-                    window.speechSynthesis.cancel();
-                    window.speechSynthesis.speak(new SpeechSynthesisUtterance(speakableText));
-                }
+                speakText(data.reply);
 
             } catch (err) {
                 status.innerText = "Error reaching JARVIS backend.";
@@ -140,45 +161,32 @@
             }
         }
 
-        // 3. WEBSPEECH API IMPLEMENTATION
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let recognition = SpeechRecognition ? new SpeechRecognition() : null;
-        let recognizing = false;
+        // 4. SPEECH SYNTHESIS ROUTER (ELEVENLABS + NATIVE FALLBACK)
+        async function speakText(text) {
+            const cleanText = text.replace(/(https?:\/\/[^\s]+)/g, "Media rendered on screen.");
+            
+            try {
+                const res = await fetch('/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: cleanText })
+                });
 
-        if (recognition) {
-            recognition.continuous = false;
-            recognition.lang = 'en-US';
-            recognition.onstart = () => { status.innerText = "Status: Listening..."; };
-            recognition.onerror = (e) => { 
-                status.innerText = "Speech Error: " + e.error + " (Use Whisper Fallback)";
-                recognizing = false;
-                micBtn.innerText = "🎙️ Push to Talk (WebSpeech)";
-                micBtn.classList.remove("active");
-            };
-            recognition.onresult = (event) => {
-                const transcript = event.results[0][0].transcript.trim();
-                recognizing = false;
-                micBtn.innerText = "🎙️ Push to Talk (WebSpeech)";
-                micBtn.classList.remove("active");
-                if (transcript) sendChat(transcript);
-            };
-        }
-
-        function toggleWebSpeech() {
-            if (!recognition) {
-                status.innerText = "WebSpeech unavailable. Use Whisper Fallback.";
-                return;
+                if (res.ok) {
+                    const audioBlob = await res.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                    return;
+                }
+            } catch (e) {
+                console.log("ElevenLabs TTS unconfigured or failed, using native fallback.");
             }
-            if (!recognizing) {
-                recognition.start();
-                recognizing = true;
-                micBtn.innerText = "🛑 Stop";
-                micBtn.classList.add("active");
-            } else {
-                recognition.stop();
-                recognizing = false;
-                micBtn.innerText = "🎙️ Push to Talk (WebSpeech)";
-                micBtn.classList.remove("active");
+
+            // Native Browser Fallback
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(cleanText));
             }
         }
 
