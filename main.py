@@ -34,26 +34,13 @@ ASSET_MAP = {
     "us30": "^DJI", "dow": "^DJI"
 }
 
-# --- DATABASE SETUP (PERSISTENT MEMORY STORE) ---
 DB_FILE = "jarvis_memory.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            role TEXT,
-            content TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_lot', '0.10')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('risk_reward', '1:2')")
     conn.commit()
@@ -120,24 +107,7 @@ def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "JARVIS Core Online", "error": "index.html not found"}
-
-@app.post("/memory/settings")
-def update_settings(payload: SettingsRequest):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_lot', ?)", (payload.default_lot,))
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('risk_reward', ?)", (payload.risk_reward,))
-    conn.commit()
-    conn.close()
-    return {"status": "SUCCESS", "message": "Risk settings updated."}
-
-@app.get("/memory/settings")
-def get_settings():
-    return {
-        "default_lot": get_db_setting("default_lot", "0.10"),
-        "risk_reward": get_db_setting("risk_reward", "1:2")
-    }
+    return {"status": "JARVIS Core Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -159,11 +129,7 @@ def execute_trade(trade: TradeExecutionRequest):
         "status": "PENDING"
     }
     PENDING_TRADES.append(order_payload)
-    return {
-        "status": "ORDER_QUEUED",
-        "details": order_payload,
-        "message": f"Order {trade.action} on {trade.symbol} queued for MT5 execution."
-    }
+    return {"status": "ORDER_QUEUED", "details": order_payload}
 
 @app.get("/trade/pending")
 def get_pending_trades():
@@ -186,16 +152,15 @@ def generate_video(payload: VideoModifyRequest):
                 input_data["first_frame_image"] = image_url
 
             output = replicate.run("minimax/video-01", input=input_data)
-            return {"prompt": prompt, "video_url": str(output)}
+            
+            # Replicate output can be a FileOutput object or string URL
+            video_url = output.url if hasattr(output, "url") else str(output)
+            return {"prompt": prompt, "video_url": video_url}
         except Exception as e:
-            print(f"Replicate error: {e}")
+            print(f"Replicate Exception: {e}")
 
-    # Guaranteed video format loop fallback ending in .mp4 so HTML renders video player
-    sample_mp4 = "https://www.w3schools.com/html/mov_bbb.mp4"
-    return {
-        "prompt": prompt,
-        "video_url": sample_mp4
-    }
+    # Fallback sample mp4 if Replicate token is absent or fails
+    return {"prompt": prompt, "video_url": "https://www.w3schools.com/html/mov_bbb.mp4"}
 
 @app.get("/market/analytics/multi")
 def get_multi_timeframe_analytics(asset: str = "gold"):
@@ -281,11 +246,7 @@ async def analyze_chart(file: UploadFile = File(...)):
     mime_type = file.content_type or "image/jpeg"
     data_url = f"data:{mime_type};base64,{base64_image}"
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "qwen/qwen3.6-27b",
         "messages": [
@@ -302,15 +263,12 @@ async def analyze_chart(file: UploadFile = File(...)):
     try:
         res = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
         res_data = res.json()
-        
         if "choices" in res_data:
             analysis = res_data["choices"][0]["message"]["content"]
             save_chat_memory("user", "[Uploaded Chart Image]")
             save_chat_memory("assistant", analysis)
             return {"analysis": analysis}
-
         return {"analysis": f"Vision API Error: {res_data}"}
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -363,26 +321,17 @@ def chat(payload: ChatRequest):
 
             if "execute" in user_query or "place trade" in user_query:
                 execute_trade(TradeExecutionRequest(
-                    symbol=rec["symbol"],
-                    action=rec["action"],
-                    lot_size=rec["lot_size"],
-                    stop_loss=rec["stop_loss"],
-                    take_profit=rec["take_profit"]
+                    symbol=rec["symbol"], action=rec["action"],
+                    lot_size=rec["lot_size"], stop_loss=rec["stop_loss"], take_profit=rec["take_profit"]
                 ))
                 analytics_context += "\n[ACTION: ORDER DISPATCHED TO MT5 QUEUE]"
 
     lot_pref = get_db_setting("default_lot", "0.10")
     rr_pref = get_db_setting("risk_reward", "1:2")
-
-    system_prompt = (
-        f"You are JARVIS, an elite quantitative analyst and autonomous trader. "
-        f"Preferences: Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. Be sharp and direct."
-    )
+    system_prompt = f"You are JARVIS, an elite quantitative analyst and autonomous trader. Preferences: Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. Be sharp and direct."
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
-    history_logs = fetch_recent_history(limit=6)
-    
-    for item in history_logs:
+    for item in fetch_recent_history(limit=6):
         messages.append({"role": item["role"], "content": item["content"]})
 
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
@@ -393,7 +342,6 @@ def chat(payload: ChatRequest):
         res_data = res.json()
         if "choices" not in res_data:
             raise HTTPException(status_code=500, detail=f"Groq API Error: {res_data}")
-
         reply = res_data["choices"][0]["message"]["content"]
         save_chat_memory("assistant", reply)
         return {"reply": reply}
@@ -407,11 +355,7 @@ async def transcribe(file: UploadFile = File(...)):
 
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
     file_bytes = await file.read()
-    
-    filename = file.filename or "recording.webm"
-    content_type = file.content_type or "audio/webm"
-    
-    files = {"file": (filename, file_bytes, content_type)}
+    files = {"file": (file.filename or "recording.webm", file_bytes, file.content_type or "audio/webm")}
     data = {"model": "whisper-large-v3-turbo"}
 
     try:
@@ -419,7 +363,6 @@ async def transcribe(file: UploadFile = File(...)):
         res_data = res.json()
         if "text" not in res_data:
             raise HTTPException(status_code=500, detail=f"Groq Whisper Error: {res_data}")
-
         return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
