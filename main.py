@@ -11,6 +11,7 @@ from ta.trend import EMAIndicator
 
 app = FastAPI()
 
+# Enable CORS for Seamless UI Interaction
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,6 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Environment Credentials
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
@@ -39,6 +41,7 @@ def home():
 # --- 1. STANDALONE PHOTOREALISTIC IMAGE ENDPOINT ---
 @app.get("/generate-image")
 def generate_image(prompt: str):
+    """Generates high-fidelity photorealistic 8k images using Pollinations FLUX Engine."""
     photo_prompt = f"A professional 8k photograph of {prompt}, shot on 35mm lens, realistic textures, studio lighting, photorealistic, hyper-detailed, sharp focus"
     encoded = urllib.parse.quote(photo_prompt)
     image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
@@ -47,6 +50,7 @@ def generate_image(prompt: str):
 # --- 2. STANDALONE VIDEO ENDPOINT ---
 @app.get("/generate-video")
 def generate_video(prompt: str):
+    """Generates MP4 videos via Replicate or FLUX render preview fallback."""
     if REPLICATE_API_TOKEN:
         try:
             import replicate
@@ -68,6 +72,7 @@ def generate_video(prompt: str):
 # --- 3. QUANTITATIVE XAU/USD SIGNAL ENGINE ---
 @app.get("/market/gold/analytics")
 def get_gold_analytics():
+    """Fetches live XAU/USD technicals with RSI, EMAs, and 0.10 lot position parameters."""
     try:
         gold = yf.Ticker("XAUUSD=X")
         df = gold.history(period="5d", interval="15m")
@@ -139,6 +144,7 @@ def chat(payload: ChatRequest):
 
     user_query = payload.message.lower()
 
+    # 1. Immediate Image Interceptor
     image_triggers = ["image", "picture", "photo", "draw", "visualize", "render", "ascii", "ingot"]
     if any(trigger in user_query for trigger in image_triggers):
         photo_prompt = f"A professional 8k photograph of {payload.message}, shot on 35mm lens, realistic textures, studio lighting, photorealistic"
@@ -146,12 +152,14 @@ def chat(payload: ChatRequest):
         img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
         return {"reply": f"Here is your photorealistic rendering:\n{img_url}"}
 
+    # 2. Immediate Video Interceptor
     video_triggers = ["video", "animate", "movie", "clip"]
     if any(trigger in user_query for trigger in video_triggers):
         vid_res = generate_video(payload.message)
         url = vid_res.get("video_url") or vid_res.get("video_render_url")
         return {"reply": f"Here is your video generation link:\n{url}"}
 
+    # 3. Market Signal Interceptor
     market_keywords = ["gold", "xau", "tradingview", "market", "analysis", "setup", "buy", "sell", "tp", "sl", "lot"]
     analytics_context = ""
     if any(k in user_query for k in market_keywords):
@@ -197,5 +205,30 @@ def chat(payload: ChatRequest):
             raise HTTPException(status_code=500, detail=f"Groq API Error: {res_data}")
 
         return {"reply": res_data["choices"][0]["message"]["content"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- 5. AUDIO TRANSCRIPTION ROUTE (DYNAMIC FORMAT ACCEPTANCE) ---
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
+
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    file_bytes = await file.read()
+    
+    filename = file.filename or "recording.webm"
+    content_type = file.content_type or "audio/webm"
+    
+    files = {"file": (filename, file_bytes, content_type)}
+    data = {"model": "whisper-large-v3-turbo"}
+
+    try:
+        res = requests.post(GROQ_AUDIO_URL, headers=headers, files=files, data=data, timeout=15)
+        res_data = res.json()
+        if "text" not in res_data:
+            raise HTTPException(status_code=500, detail=f"Groq Whisper Error: {res_data}")
+
+        return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
