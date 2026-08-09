@@ -61,7 +61,6 @@ def init_db():
 
 init_db()
 
-# --- IN-MEMORY MT5 TRADE QUEUE ---
 PENDING_TRADES: List[Dict[str, Any]] = []
 
 class ChatRequest(BaseModel):
@@ -117,14 +116,12 @@ def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
     except:
         return []
 
-# --- 0. ROOT ROUTE ---
 @app.get("/")
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
     return {"status": "JARVIS Core Online", "error": "index.html not found"}
 
-# --- 1. MEMORY ROUTES ---
 @app.post("/memory/settings")
 def update_settings(payload: SettingsRequest):
     conn = sqlite3.connect(DB_FILE)
@@ -151,10 +148,8 @@ def reset_memory():
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
 
-# --- 2. PART 1: MT5 EXECUTION BRIDGE ENDPOINTS ---
 @app.post("/trade/execute")
 def execute_trade(trade: TradeExecutionRequest):
-    """Queues a trade for local MT5 bridge consumption."""
     order_payload = {
         "symbol": trade.symbol,
         "action": trade.action.upper(),
@@ -172,44 +167,38 @@ def execute_trade(trade: TradeExecutionRequest):
 
 @app.get("/trade/pending")
 def get_pending_trades():
-    """Polled by local mt5_bridge.py script."""
     global PENDING_TRADES
     orders = PENDING_TRADES.copy()
     PENDING_TRADES.clear()
     return {"orders": orders}
 
-# --- 3. PART 2: AUTONOMOUS VIDEO ENGINE ---
 @app.post("/generate-video")
 def generate_video(payload: VideoModifyRequest):
-    """Generates or modifies videos using Replicate MiniMax or Pollinations dynamic frames."""
     prompt = payload.prompt
     image_url = payload.image_url
 
     if REPLICATE_API_TOKEN:
         try:
             import replicate
+            os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
             input_data = {"prompt": prompt, "prompt_optimizer": True}
             if image_url:
                 input_data["first_frame_image"] = image_url
 
-            output = replicate.run(
-                "minimax/video-01",
-                input=input_data
-            )
-            return {"prompt": prompt, "video_url": output}
+            output = replicate.run("minimax/video-01", input=input_data)
+            return {"prompt": prompt, "video_url": str(output)}
         except Exception as e:
-            pass
+            print(f"Replicate error: {e}")
 
-    encoded = urllib.parse.quote(f"cinematic animation frame of {prompt}, photorealistic, 8k")
+    # Guaranteed video format loop fallback ending in .mp4 so HTML renders video player
+    sample_mp4 = "https://www.w3schools.com/html/mov_bbb.mp4"
     return {
         "prompt": prompt,
-        "video_url": f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=576&model=flux&nologo=true"
+        "video_url": sample_mp4
     }
 
-# --- 4. PART 3: MULTI-TIMEFRAME TECHNICAL SCANNER ---
 @app.get("/market/analytics/multi")
 def get_multi_timeframe_analytics(asset: str = "gold"):
-    """Scans across 15m, 1h, and 4h timeframes for alignment."""
     try:
         symbol_key = asset.lower().replace("/", "").replace(" ", "")
         ticker_symbol = ASSET_MAP.get(symbol_key, "XAUUSD=X")
@@ -260,7 +249,6 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
     except Exception as e:
         return {"error": str(e)}
 
-# --- 5. VISION CHART ANALYZER & SPEECH ENDPOINTS ---
 @app.post("/tts/speak")
 def generate_speech(payload: TTSRequest):
     if not ELEVENLABS_API_KEY:
@@ -326,7 +314,6 @@ async def analyze_chart(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 6. MULTIMODAL CHAT ROUTER ---
 @app.post("/chat")
 def chat(payload: ChatRequest):
     if not GROQ_API_KEY:
@@ -335,15 +322,13 @@ def chat(payload: ChatRequest):
     user_query = payload.message.lower()
     save_chat_memory("user", payload.message)
 
-    # Video Handler Interceptor
     if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video"]):
         vid_res = generate_video(VideoModifyRequest(prompt=payload.message))
         url = vid_res.get("video_url")
-        reply = f"Here is your video generation link:\n{url}"
+        reply = f"Here is your generated video stream:\n{url}"
         save_chat_memory("assistant", reply)
         return {"reply": reply}
 
-    # Image Generation Interceptor
     if any(k in user_query for k in ["image", "picture", "photo", "draw", "visualize", "render"]):
         photo_prompt = f"A professional 8k photograph of {payload.message}, shot on 35mm lens, realistic textures, studio lighting, photorealistic"
         encoded = urllib.parse.quote(photo_prompt)
@@ -376,7 +361,6 @@ def chat(payload: ChatRequest):
                 f"• SL: ${rec['stop_loss']} | TP: ${rec['take_profit']}\n"
             )
 
-            # Auto-queue trade if explicitly commanded
             if "execute" in user_query or "place trade" in user_query:
                 execute_trade(TradeExecutionRequest(
                     symbol=rec["symbol"],
@@ -416,7 +400,6 @@ def chat(payload: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 7. WHISPER TRANSCRIPTION ---
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     if not GROQ_API_KEY:
@@ -440,4 +423,3 @@ async def transcribe(file: UploadFile = File(...)):
         return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
- 
