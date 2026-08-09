@@ -21,11 +21,9 @@ app.add_middleware(
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
 ASSET_MAP = {
     "gold": "XAUUSD=X", "xau": "XAUUSD=X",
@@ -52,9 +50,6 @@ PENDING_TRADES: List[Dict[str, Any]] = []
 
 class ChatRequest(BaseModel):
     message: str
-
-class TTSRequest(BaseModel):
-    text: str
 
 class TradeExecutionRequest(BaseModel):
     symbol: str
@@ -207,28 +202,6 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/tts/speak")
-def generate_speech(payload: TTSRequest):
-    if not ELEVENLABS_API_KEY:
-        raise HTTPException(status_code=400, detail="ELEVENLABS_API_KEY missing.")
-
-    clean_text = payload.text[:500]
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-    headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
-    data = {
-        "text": clean_text,
-        "model_id": "eleven_flash_v2_5",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-    }
-
-    try:
-        res = requests.post(url, json=data, headers=headers, timeout=15)
-        if res.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"ElevenLabs Error: {res.text}")
-        return Response(content=res.content, media_type="audio/mpeg")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/analyze-chart")
 async def analyze_chart(file: UploadFile = File(...)):
     if not GROQ_API_KEY:
@@ -359,3 +332,4 @@ async def transcribe(file: UploadFile = File(...)):
         return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+ 
