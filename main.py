@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import os, requests, urllib.parse, base64, sqlite3, json
+import os, requests, urllib.parse, base64, sqlite3, json, io
 import pandas as pd
 import yfinance as yf
+from gtts import gTTS
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 
@@ -50,6 +51,9 @@ PENDING_TRADES: List[Dict[str, Any]] = []
 
 class ChatRequest(BaseModel):
     message: str
+
+class TTSRequest(BaseModel):
+    text: str
 
 class TradeExecutionRequest(BaseModel):
     symbol: str
@@ -108,6 +112,18 @@ def reset_memory():
     conn.commit()
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
+
+@app.post("/tts/speak")
+def speak_audio(payload: TTSRequest):
+    try:
+        clean_text = payload.text.replace("\n", " ")[:300]
+        tts = gTTS(text=clean_text, lang='en', slow=False)
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return StreamingResponse(fp, media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/trade/execute")
 def execute_trade(trade: TradeExecutionRequest):
@@ -201,42 +217,6 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
         }
     except Exception as e:
         return {"error": str(e)}
-
-@app.post("/analyze-chart")
-async def analyze_chart(file: UploadFile = File(...)):
-    if not GROQ_API_KEY:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
-
-    file_bytes = await file.read()
-    base64_image = base64.b64encode(file_bytes).decode("utf-8")
-    mime_type = file.content_type or "image/jpeg"
-    data_url = f"data:{mime_type};base64,{base64_image}"
-
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "qwen/qwen3.6-27b",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Analyze this trading chart image. Identify key support, resistance, technical pattern, and clear trade recommendations."},
-                    {"type": "image_url", "image_url": {"url": data_url}}
-                ]
-            }
-        ]
-    }
-
-    try:
-        res = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
-        res_data = res.json()
-        if "choices" in res_data:
-            analysis = res_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Chart Image]")
-            save_chat_memory("assistant", analysis)
-            return {"analysis": analysis}
-        return {"analysis": f"Vision API Error: {res_data}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
 def chat(payload: ChatRequest):
@@ -332,4 +312,3 @@ async def transcribe(file: UploadFile = File(...)):
         return {"text": res_data["text"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
- 
