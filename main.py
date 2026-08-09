@@ -183,7 +183,7 @@ async def analyze_chart(file: UploadFile = File(...)):
     }
     
     payload = {
-        "model": "llama-3.2-90b-vision-preview",
+        "model": "qwen/qwen3.6-27b",
         "messages": [
             {
                 "role": "user",
@@ -204,19 +204,8 @@ async def analyze_chart(file: UploadFile = File(...)):
             save_chat_memory("user", "[Uploaded Chart Image]")
             save_chat_memory("assistant", analysis)
             return {"analysis": analysis}
-        
-        # Fallback Vision Model Execution
-        payload["model"] = "llama-3.2-11b-vision-instruct"
-        res_fallback = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
-        res_fb_data = res_fallback.json()
-        
-        if "choices" in res_fb_data:
-            analysis = res_fb_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Chart Image]")
-            save_chat_memory("assistant", analysis)
-            return {"analysis": analysis}
 
-        return {"analysis": f"Groq Error: {res_data}"}
+        return {"analysis": f"Vision API Error: {res_data}"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
