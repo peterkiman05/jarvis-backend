@@ -6,3 +6,4 @@ yfinance
 ta
 gTTS
 replicate
+python-multipart
