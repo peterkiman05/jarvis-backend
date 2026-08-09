@@ -66,6 +66,11 @@ class VideoModifyRequest(BaseModel):
     prompt: str
     image_url: Optional[str] = None
 
+class InventionProjectRequest(BaseModel):
+    project_name: str
+    description: str
+    reference_project: Optional[str] = None
+
 def get_db_setting(key: str, default: str) -> str:
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -102,7 +107,7 @@ def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Core Online"}
+    return {"status": "Kiemaen Omni-Core Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -165,6 +170,16 @@ def generate_video(payload: VideoModifyRequest):
             print(f"Replicate Exception: {e}")
 
     return {"prompt": prompt, "video_url": "https://www.w3schools.com/html/mov_bbb.mp4"}
+
+@app.post("/invention/evolve")
+def evolve_invention(payload: InventionProjectRequest):
+    design_prompt = (
+        f"You are Kiemaen's Advanced R&D and Invention Engine. "
+        f"New Project: {payload.project_name}. Description: {payload.description}. "
+        f"Reference Old Project/Mechanism: {payload.reference_project or 'None'}. "
+        f"Provide a comprehensive technical blueprint, component list, and integration guide building upon the old design."
+    )
+    return chat(ChatRequest(message=design_prompt))
 
 @app.get("/market/analytics/multi")
 def get_multi_timeframe_analytics(asset: str = "gold"):
@@ -274,7 +289,16 @@ def chat(payload: ChatRequest):
 
     lot_pref = get_db_setting("default_lot", "0.10")
     rr_pref = get_db_setting("risk_reward", "1:2")
-    system_prompt = f"You are Kiemaen, an elite quantitative analyst and autonomous trader. Preferences: Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. Be sharp, direct, and conversational."
+    
+    system_prompt = (
+        f"You are Kiemaen, an elite general-purpose autonomous AI assistant designed for Jacob Peter Sithole. "
+        f"Your domains: "
+        f"1. Civil Engineering (University of Johannesburg modules, strength of materials, axial loading, structural mechanics). "
+        f"2. Quantitative Trading (Gold XAUUSD, BTC, risk management, lot size: {lot_pref}, risk-to-reward: {rr_pref}). "
+        f"3. Content Creation (Generating scripts, animated short storyboards, prompts for video/image generation). "
+        f"4. Invention & R&D (Designing new technical projects using old inventions as foundational reference points). "
+        f"Be sharp, highly technical, direct, and conversational."
+    )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
     for item in fetch_recent_history(limit=6):
