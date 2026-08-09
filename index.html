@@ -44,19 +44,31 @@
         let audioChunks = [];
         let isRecording = false;
 
-        // 1. WHISPER AUDIO FALLBACK
+        // 1. WHISPER AUDIO FALLBACK (DYNAMIC MIME TYPES)
         async function toggleMediaRecorder() {
             if (!isRecording) {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
+                    
+                    let mimeType = 'audio/webm';
+                    if (!MediaRecorder.isTypeSupported('audio/webm')) {
+                        mimeType = '';
+                    }
+
+                    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
                     audioChunks = [];
 
-                    mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) audioChunks.push(event.data);
+                    };
+
                     mediaRecorder.onstop = async () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const actualType = mediaRecorder.mimeType || 'audio/webm';
+                        const ext = actualType.includes('mp4') ? 'mp4' : 'webm';
+                        const audioBlob = new Blob(audioChunks, { type: actualType });
+                        
                         const formData = new FormData();
-                        formData.append('file', audioBlob, 'voice.wav');
+                        formData.append('file', audioBlob, `voice.${ext}`);
 
                         status.innerText = "Status: Transcribing via Whisper...";
                         try {
@@ -65,7 +77,7 @@
                             if (data.text) {
                                 sendChat(data.text);
                             } else {
-                                status.innerText = "Transcription Error";
+                                status.innerText = "Transcription Error: " + JSON.stringify(data);
                             }
                         } catch(e) {
                             status.innerText = "Server Error during transcription";
