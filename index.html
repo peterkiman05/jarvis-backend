@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kiemaen - Autonomous Quantitative Terminal</title>
+    <title>Kiemaen - Continuous Voice Terminal</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: monospace; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 10px; }
@@ -22,19 +22,19 @@
 </head>
 <body>
     <div class="container">
-        <h2 style="text-align: center; color: #58a6ff; margin: 5px 0;">KIEMAEN TERMINAL v2.5</h2>
+        <h2 style="text-align: center; color: #58a6ff; margin: 5px 0;">KIEMAEN VOICE STREAM</h2>
         
         <div class="card">
-            <button id="recordBtn" class="btn btn-green" onclick="toggleVoiceSession()">🎤 Start Voice-to-Voice Stream</button>
-            <input type="text" id="textInput" placeholder="Type command to Kiemaen..." onkeydown="if(event.key==='Enter') sendText()">
-            <button class="btn btn-blue" onclick="sendText()">Send Command</button>
-            <button class="btn btn-red" onclick="clearMemory()">🧹 Clear Persistent Memory</button>
+            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous AI Voice Mode</button>
+            <input type="text" id="textInput" placeholder="Type text fallback..." onkeydown="if(event.key==='Enter') sendText()">
+            <button class="btn btn-blue" onclick="sendText()">Send Text</button>
+            <button class="btn btn-red" onclick="clearMemory()">🧹 Clear Memory</button>
             <div id="status" class="status">Status: Standby</div>
         </div>
 
         <div class="card">
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Systems online. Voice-to-voice stream ready. How can I assist your portfolio today?</div>
+                <div class="msg-assistant">Kiemaen: Continuous voice engine online. Click the green button to start talking live.</div>
             </div>
         </div>
 
@@ -44,37 +44,60 @@
         </div>
     </div>
 
-    <audio id="audioPlayer" style="display:none;"></audio>
+    <audio id="audioPlayer"></audio>
 
     <script>
         let mediaRecorder;
         let audioChunks = [];
-        let isRecording = false;
+        let isContinuousActive = false;
+        let isListening = false;
+        let audioContext, analyser, microphone, javascriptNode;
+        let silenceTimer = null;
 
-        async function toggleVoiceSession() {
-            if (!isRecording) {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-                    audioChunks = [];
+        async function toggleContinuousSession() {
+            if (!isContinuousActive) {
+                isContinuousActive = true;
+                document.getElementById("toggleLoopBtninnerText = '⏹️ Stop Continuous Mode'");
+                document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
+                document.getElementById("toggleLoopBtn").className = "btn btn-red";
+                updateStatus("Status: Continuous Stream Active (Listening...)");
+                startListeningLoop();
+            } else {
+                isContinuousActive = false;
+                stopListeningLoop();
+                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous AI Voice Mode";
+                document.getElementById("toggleLoopBtn").className = "btn btn-green";
+                updateStatus("Status: Standby");
+            }
+        }
 
-                    mediaRecorder.ondataavailable = event => {
-                        if (event.data.size > 0) audioChunks.push(event.data);
-                    };
+        async function startListeningLoop() {
+            if (!isContinuousActive) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                audioChunks = [];
 
-                    mediaRecorder.onstop = async () => {
-                        updateStatus("Kiemaen is processing audio stream...");
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        const formData = new FormData();
-                        formData.append("file", audioBlob, "voice_prompt.webm");
+                mediaRecorder.ondataavailable = e => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
 
-                        try {
-                            const transRes = await fetch('/transcribe', { method: 'POST', body: formData });
-                            const transData = await transRes.json();
-                            if (!transData.text) throw new Error("Transcription failed");
+                mediaRecorder.onstop = async () => {
+                    if (!isContinuousActive) return;
+                    updateStatus("Status: Kiemaen is thinking...");
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append("file", audioBlob, "voice.webm");
 
+                    try {
+                        // 1. Transcribe via Whisper
+                        const transRes = await fetch('/transcribe', { method: 'POST', body: formData });
+                        const transData = await transRes.json();
+                        
+                        if (transData.text && transData.text.trim().length > 1) {
                             appendTerminal("User: " + transData.text, "msg-user");
 
+                            // 2. Chat Query
                             const chatRes = await fetch('/chat', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -83,28 +106,80 @@
                             const chatData = await chatRes.json();
                             appendTerminal("Kiemaen: " + chatData.reply, "msg-assistant");
                             handleMediaOutputs(chatData.reply);
-                            playKiemaenVoice(chatData.reply);
 
-                        } catch (err) {
-                            appendTerminal("Error: " + err.message, "msg-assistant");
-                            updateStatus("Status: Error");
+                            // 3. Speak response using ElevenLabs, then loop back to listening
+                            await speakAndListenAgain(chatData.reply);
+                        } else {
+                            // If no clear speech, restart listening immediately
+                            if (isContinuousActive) startListeningLoop();
                         }
-                    };
+                    } catch (err) {
+                        console.log("Loop Error:", err);
+                        if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                    }
+                };
 
-                    mediaRecorder.start();
-                    isRecording = true;
-                    document.getElementById("recordBtn").innerText = "⏹️ Stop & Send Voice Stream";
-                    document.getElementById("recordBtn").className = "btn btn-red";
-                    updateStatus("Status: Listening live...");
-                } catch (e) {
-                    alert("Microphone access denied or unsupported.");
-                }
-            } else {
+                mediaRecorder.start();
+                isListening = true;
+                updateStatus("Status: Listening... (Speak now)");
+
+                // Automatically cut recording and process after 5 seconds of speaking
+                setTimeout(() => {
+                    if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
+                        isListening = false;
+                        mediaRecorder.stop();
+                    }
+                }, 6000);
+
+            } catch (e) {
+                alert("Microphone permission needed for continuous mode.");
+                toggleContinuousSession();
+            }
+        }
+
+        function stopListeningLoop() {
+            isListening = false;
+            if (mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
-                isRecording = false;
-                document.getElementById("recordBtn").innerText = "🎤 Start Voice-to-Voice Stream";
-                document.getElementById("recordBtn").className = "btn btn-green";
-                updateStatus("Status: Standby");
+            }
+        }
+
+        async function speakAndListenAgain(text) {
+            try {
+                const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
+                if (!cleanText.trim()) {
+                    if (isContinuousActive) startListeningLoop();
+                    return;
+                }
+
+                updateStatus("Status: Kiemaen is speaking...");
+                const res = await fetch('/tts/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: cleanText })
+                });
+
+                if (!res.ok) {
+                    if (isContinuousActive) startListeningLoop();
+                    return;
+                }
+
+                const blob = await res.blob();
+                const audioUrl = URL.createObjectURL(blob);
+                const player = document.getElementById("audioPlayer");
+                player.src = audioUrl;
+                
+                player.onended = () => {
+                    // Once Kiemaen finishes talking, restart listening loop automatically!
+                    if (isContinuousActive) {
+                        setTimeout(startListeningLoop, 500);
+                    }
+                };
+
+                await player.play();
+            } catch (e) {
+                console.log("Voice output error:", e);
+                if (isContinuousActive) startListeningLoop();
             }
         }
 
@@ -112,54 +187,23 @@
             const input = document.getElementById("textInput");
             const text = input.value.trim();
             if (!text) return;
-
             input.value = "";
             appendTerminal("User: " + text, "msg-user");
-            updateStatus("Kiemaen is analyzing...");
 
-            try {
-                const res = await fetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-                const data = await res.json();
-                appendTerminal("Kiemaen: " + data.reply, "msg-assistant");
-                handleMediaOutputs(data.reply);
-                playKiemaenVoice(data.reply);
-                updateStatus("Status: Standby");
-            } catch (err) {
-                appendTerminal("Error connecting to server.", "msg-assistant");
-                updateStatus("Status: Error");
-            }
-        }
-
-        async function playKiemaenVoice(text) {
-            try {
-                const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
-                if (!cleanText.trim()) return;
-
-                const res = await fetch('/tts/speak', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: cleanText })
-                });
-                if (!res.ok) return;
-
-                const blob = await res.blob();
-                const audioUrl = URL.createObjectURL(blob);
-                const player = document.getElementById("audioPlayer");
-                player.src = audioUrl;
-                player.play();
-            } catch (e) {
-                console.log("TTS playback skipped:", e);
-            }
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+            const data = await res.json();
+            appendTerminal("Kiemaen: " + data.reply, "msg-assistant");
+            handleMediaOutputs(data.reply);
+            speakAndListenAgain(data.reply);
         }
 
         function handleMediaOutputs(reply) {
             const container = document.getElementById("mediaContainer");
             const output = document.getElementById("mediaOutput");
-            
             const urlMatch = reply.match(/(https?:\/\/[^\s]+)/g);
             if (urlMatch) {
                 const url = urlMatch[urlMatch.length - 1];
@@ -167,7 +211,7 @@
                 if (url.includes(".mp4") || url.includes("mov")) {
                     output.innerHTML = `<video controls autoplay src="${url}"></video>`;
                 } else if (url.includes("image.pollinations.ai")) {
-                    output.innerHTML = `<img src="${url}" alt="Generated Visual">`;
+                    output.innerHTML = `<img src="${url}" alt="Visual">`;
                 }
             }
         }
@@ -183,7 +227,7 @@
 
         async function clearMemory() {
             await fetch('/memory/reset', { method: 'DELETE' });
-            document.getElementById("terminal").innerHTML = '<div class="msg-assistant">Kiemaen: Persistent memory wiped clean.</div>';
+            document.getElementById("terminal").innerHTML = '<div class="msg-assistant">Kiemaen: Memory reset.</div>';
         }
 
         function updateStatus(text) {
