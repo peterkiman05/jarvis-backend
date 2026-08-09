@@ -44,9 +44,6 @@
         </div>
     </div>
 
-    <!-- Persistent Audio Element for ElevenLabs Voice -->
-    <audio id="audioPlayer" autoplay></audio>
-
     <script>
         let mediaRecorder;
         let audioChunks = [];
@@ -54,11 +51,7 @@
         let isListening = false;
         let speechTimeout = null;
 
-        async function toggleContinuousSession() {
-            // Unlock browser audio context permissions on user click
-            const player = document.getElementById("audioPlayer");
-            player.play().catch(() => {});
-
+        function toggleContinuousSession() {
             if (!isContinuousActive) {
                 isContinuousActive = true;
                 document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
@@ -93,14 +86,12 @@
                     formData.append("file", audioBlob, "voice.webm");
 
                     try {
-                        // 1. Transcribe via Whisper
                         const transRes = await fetch('/transcribe', { method: 'POST', body: formData });
                         const transData = await transRes.json();
                         
                         if (transData.text && transData.text.trim().length > 1) {
                             appendTerminal("User: " + transData.text, "msg-user");
 
-                            // 2. Chat Query
                             const chatRes = await fetch('/chat', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -110,8 +101,7 @@
                             appendTerminal("Kiemaen: " + chatData.reply, "msg-assistant");
                             handleMediaOutputs(chatData.reply);
 
-                            // 3. Speak response using ElevenLabs AI Voice
-                            await speakAndListenAgain(chatData.reply);
+                            speakAndListenAgain(chatData.reply);
                         } else {
                             if (isContinuousActive) startListeningLoop();
                         }
@@ -125,14 +115,13 @@
                 isListening = true;
                 updateStatus("Status: Listening... (Speak now)");
 
-                // Wait for you to speak, then enforce a 2-second delay buffer after speech activity
                 clearTimeout(speechTimeout);
                 speechTimeout = setTimeout(() => {
                     if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
                         isListening = false;
                         mediaRecorder.stop();
                     }
-                }, 7000); // 7s total capture window, closing with a 2-second pause buffer
+                }, 6000);
 
             } catch (e) {
                 alert("Microphone permission needed for continuous mode.");
@@ -148,45 +137,36 @@
             }
         }
 
-        async function speakAndListenAgain(text) {
-            try {
-                // Strip out long URLs so the AI voice doesn't spell out http links
-                const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
-                if (!cleanText.trim()) {
-                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
-                    return;
-                }
+        function speakAndListenAgain(text) {
+            const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
+            if (!cleanText.trim()) {
+                if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                return;
+            }
 
-                updateStatus("Status: Kiemaen is speaking...");
-                const res = await fetch('/tts/speak', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: cleanText })
-                });
+            updateStatus("Status: Kiemaen is speaking...");
+            
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(cleanText);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
 
-                if (!res.ok) {
-                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
-                    return;
-                }
-
-                const blob = await res.blob();
-                const audioUrl = URL.createObjectURL(blob);
-                const player = document.getElementById("audioPlayer");
-                player.src = audioUrl;
-                
-                // Enforce a 2-second delay buffer after Kiemaen finishes speaking before reopening mic
-                player.onended = () => {
+                utterance.onend = () => {
                     if (isContinuousActive) {
                         updateStatus("Status: Pausing (2s buffer)...");
+                        // Exact 2-second delay buffer after speech ends before listening again
                         setTimeout(() => {
                             if (isContinuousActive) startListeningLoop();
-                        }, 2000); // Exact 2-second delay before listening again
+                        }, 2000);
                     }
                 };
 
-                await player.play();
-            } catch (e) {
-                console.log("Voice output error:", e);
+                utterance.onerror = () => {
+                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                };
+
+                window.speechSynthesis.speak(utterance);
+            } else {
                 if (isContinuousActive) setTimeout(startListeningLoop, 2000);
             }
         }
@@ -244,4 +224,3 @@
     </script>
 </body>
 </html>
- 
