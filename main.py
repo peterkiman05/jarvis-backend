@@ -34,7 +34,7 @@ ASSET_MAP = {
     "us30": "^DJI", "dow": "^DJI"
 }
 
-DB_FILE = "jarvis_memory.db"
+DB_FILE = "kiemaen_memory.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -55,10 +55,6 @@ class ChatRequest(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
-
-class SettingsRequest(BaseModel):
-    default_lot: str
-    risk_reward: str
 
 class TradeExecutionRequest(BaseModel):
     symbol: str
@@ -107,7 +103,7 @@ def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "JARVIS Core Online"}
+    return {"status": "Kiemaen Core Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -152,14 +148,11 @@ def generate_video(payload: VideoModifyRequest):
                 input_data["first_frame_image"] = image_url
 
             output = replicate.run("minimax/video-01", input=input_data)
-            
-            # Replicate output can be a FileOutput object or string URL
             video_url = output.url if hasattr(output, "url") else str(output)
             return {"prompt": prompt, "video_url": video_url}
         except Exception as e:
             print(f"Replicate Exception: {e}")
 
-    # Fallback sample mp4 if Replicate token is absent or fails
     return {"prompt": prompt, "video_url": "https://www.w3schools.com/html/mov_bbb.mp4"}
 
 @app.get("/market/analytics/multi")
@@ -328,7 +321,7 @@ def chat(payload: ChatRequest):
 
     lot_pref = get_db_setting("default_lot", "0.10")
     rr_pref = get_db_setting("risk_reward", "1:2")
-    system_prompt = f"You are JARVIS, an elite quantitative analyst and autonomous trader. Preferences: Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. Be sharp and direct."
+    system_prompt = f"You are Kiemaen, an elite quantitative analyst and autonomous trader. Preferences: Lot Size = {lot_pref}, Risk-to-Reward = {rr_pref}. Be sharp, direct, and conversational."
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
     for item in fetch_recent_history(limit=6):
