@@ -12,6 +12,7 @@
         .btn-red { background-color: #da3633; color: white; }
         .btn-blue { background-color: #1f6feb; color: white; }
         .btn-green { background-color: #238636; color: white; }
+        .btn-purple { background-color: #8957e5; color: white; }
         .terminal { background: #010409; border: 1px solid #30363d; border-radius: 6px; height: 350px; overflow-y: auto; padding: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
         .msg-user { color: #58a6ff; text-align: left; }
         .msg-assistant { color: #3fb950; text-align: left; white-space: pre-wrap; }
@@ -25,6 +26,7 @@
         <h2 style="text-align: center; color: #58a6ff; margin: 5px 0;">KIEMAEN VOICE STREAM</h2>
         
         <div class="card">
+            <button class="btn btn-purple" onclick="testVoice()">🔊 Test Voice Output Now</button>
             <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous AI Voice Mode</button>
             <input type="text" id="textInput" placeholder="Type text fallback..." onkeydown="if(event.key==='Enter') sendText()">
             <button class="btn btn-blue" onclick="sendText()">Send Text</button>
@@ -34,7 +36,7 @@
 
         <div class="card">
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Continuous voice engine online. Click the green button to start talking live.</div>
+                <div class="msg-assistant">Kiemaen: Continuous voice engine online. Click 'Test Voice Output Now' first to unlock audio.</div>
             </div>
         </div>
 
@@ -51,7 +53,20 @@
         let isListening = false;
         let speechTimeout = null;
 
+        function testVoice() {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance("Audio systems unlocked. Kiemaen is ready.");
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
+                updateStatus("Status: Audio Unlocked!");
+            } else {
+                alert("Speech synthesis not supported on this browser.");
+            }
+        }
+
         function toggleContinuousSession() {
+            testVoice(); // Unlock audio on toggle click
             if (!isContinuousActive) {
                 isContinuousActive = true;
                 document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
@@ -147,17 +162,16 @@
             updateStatus("Status: Kiemaen is speaking...");
             
             if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(cleanText);
                 utterance.rate = 1.0;
-                utterance.pitch = 1.0;
 
                 utterance.onend = () => {
                     if (isContinuousActive) {
                         updateStatus("Status: Pausing (2s buffer)...");
-                        // Exact 2-second delay buffer after speech ends before listening again
                         setTimeout(() => {
                             if (isContinuousActive) startListeningLoop();
-                        }, 2000);
+                        }, 2000); // 2-second delay buffer before listening again
                     }
                 };
 
