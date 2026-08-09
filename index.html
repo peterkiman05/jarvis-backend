@@ -12,6 +12,7 @@
         button { background: #238636; color: #fff; border: none; padding: 12px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; margin-bottom: 8px; }
         button.active { background: #da3633; }
         .btn-secondary { background: #1f6feb; }
+        .btn-danger { background: #8e1519; }
         #status { font-size: 0.9rem; color: #8b949e; margin-top: 10px; text-align: center; }
         #chat-log { height: 280px; overflow-y: auto; background: #010409; padding: 12px; border-radius: 6px; border: 1px solid #30363d; margin-bottom: 10px; white-space: pre-wrap; }
         .user { color: #79c0ff; margin: 8px 0; font-weight: bold; }
@@ -27,6 +28,7 @@
     <div class="card">
         <button id="record-btn" onclick="toggleMediaRecorder()">🔴 Record Audio (Whisper)</button>
         <button class="btn-secondary" onclick="document.getElementById('chart-input').click()">🖼️ Upload Chart / Image Analysis</button>
+        <button class="btn-danger" onclick="clearMemory()">🧹 Clear Persistent Memory</button>
         <input type="file" id="chart-input" accept="image/*" onchange="uploadChart(event)">
         <div id="status">Status: Standby</div>
     </div>
@@ -46,7 +48,17 @@
         let audioChunks = [];
         let isRecording = false;
 
-        // 1. VISION / CHART IMAGE ANALYSIS UPLOAD
+        async function clearMemory() {
+            try {
+                const res = await fetch('/memory/reset', { method: 'DELETE' });
+                const data = await res.json();
+                chatLog.innerHTML = "";
+                status.innerText = "Status: " + data.message;
+            } catch(e) {
+                status.innerText = "Error resetting memory.";
+            }
+        }
+
         async function uploadChart(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -73,7 +85,6 @@
             }
         }
 
-        // 2. WHISPER AUDIO RECORDING
         async function toggleMediaRecorder() {
             if (!isRecording) {
                 try {
@@ -125,7 +136,6 @@
             }
         }
 
-        // 3. CHAT ROUTER & MEDIA RENDER
         async function sendChat(message) {
             appendLog("User", message);
             status.innerText = "Status: JARVIS responding...";
@@ -161,7 +171,6 @@
             }
         }
 
-        // 4. SPEECH SYNTHESIS ROUTER (ELEVENLABS + NATIVE FALLBACK)
         async function speakText(text) {
             const cleanText = text.replace(/(https?:\/\/[^\s]+)/g, "Media rendered on screen.");
             
@@ -180,10 +189,9 @@
                     return;
                 }
             } catch (e) {
-                console.log("ElevenLabs TTS unconfigured or failed, using native fallback.");
+                console.log("ElevenLabs TTS unconfigured, using native fallback.");
             }
 
-            // Native Browser Fallback
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
                 window.speechSynthesis.speak(new SpeechSynthesisUtterance(cleanText));
