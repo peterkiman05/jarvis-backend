@@ -13,11 +13,13 @@
         .btn-blue { background-color: #1f6feb; color: white; }
         .btn-green { background-color: #238636; color: white; }
         .btn-purple { background-color: #8957e5; color: white; }
+        .btn-orange { background-color: #d18616; color: white; }
         .terminal { background: #010409; border: 1px solid #30363d; border-radius: 6px; height: 350px; overflow-y: auto; padding: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
         .msg-user { color: #58a6ff; text-align: left; }
         .msg-assistant { color: #3fb950; text-align: left; white-space: pre-wrap; }
         .status { text-align: center; font-size: 13px; color: #8b949e; margin-bottom: 5px; }
         input[type="text"] { width: calc(100% - 22px); padding: 10px; background: #0d1117; border: 1px solid #30363d; color: white; border-radius: 6px; font-family: monospace; margin-bottom: 8px; }
+        input[type="file"] { width: 100%; margin-bottom: 8px; color: #8b949e; }
         video, img { width: 100%; border-radius: 6px; margin-top: 5px; max-height: 250px; object-fit: cover; }
     </style>
 </head>
@@ -27,8 +29,14 @@
         
         <div class="card">
             <button class="btn btn-purple" onclick="testAudioUnlock()">🔊 Tap to Unlock Audio</button>
-            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (12s Buffer)</button>
-            <input type="text" id="textInput" placeholder="Ask engineering, trading, or animated video requests..." onkeydown="if(event.key==='Enter') sendText()">
+            <button id="toggleLoopBtn" class="btn btn-green" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (Unlimited Listen)</button>
+            <button id="manualStopBtn" class="btn btn-red" style="display:none;" onclick="stopSpeakingAndSend()">🛑 Done Talking (Process Now)</button>
+            
+            <div style="font-size: 12px; color: #8b949e; margin-bottom: 2px;">Upload Chart for Vision Analysis:</div>
+            <input type="file" id="chartInput" accept="image/*">
+            <button class="btn btn-orange" onclick="uploadChart()">📊 Analyze Chart Image</button>
+
+            <input type="text" id="textInput" placeholder="Ask engineering, trading, or video requests..." onkeydown="if(event.key==='Enter') sendText()">
             <button class="btn btn-blue" onclick="sendText()">Send Command</button>
             <button class="btn btn-red" onclick="clearMemory()">🧹 Clear Memory</button>
             <div id="status" class="status">Status: Standby</div>
@@ -36,7 +44,7 @@
 
         <div class="card">
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Omni-engine online. 12-second speech window active. Ready for video generation and modules.</div>
+                <div class="msg-assistant">Kiemaen: Omni-engine online. Unlimited listening mode and full-length reading enabled.</div>
             </div>
         </div>
 
@@ -53,7 +61,6 @@
         let audioChunks = [];
         let isContinuousActive = false;
         let isListening = false;
-        let speechTimeout = null;
 
         async function testAudioUnlock() {
             try {
@@ -75,20 +82,22 @@
         function toggleContinuousSession() {
             if (!isContinuousActive) {
                 isContinuousActive = true;
-                document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Omni-Mode";
+                document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
                 document.getElementById("toggleLoopBtn").className = "btn btn-red";
-                updateStatus("Status: Listening live (12s window)...");
-                startListeningLoop();
+                document.getElementById("manualStopBtn").style.display = "block";
+                updateStatus("Status: Listening indefinitely (Speak freely)...");
+                startUnlimitedListening();
             } else {
                 isContinuousActive = false;
-                stopListeningLoop();
-                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (12s Buffer)";
+                stopListening();
+                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (Unlimited Listen)";
                 document.getElementById("toggleLoopBtn").className = "btn btn-green";
+                document.getElementById("manualStopBtn").style.display = "none";
                 updateStatus("Status: Standby");
             }
         }
 
-        async function startListeningLoop() {
+        async function startUnlimitedListening() {
             if (!isContinuousActive) return;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -101,7 +110,7 @@
 
                 mediaRecorder.onstop = async () => {
                     if (!isContinuousActive) return;
-                    updateStatus("Status: Kiemaen is processing...");
+                    updateStatus("Status: Kiemaen is processing your full request...");
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const formData = new FormData();
                     formData.append("file", audioBlob, "voice.webm");
@@ -122,28 +131,19 @@
                             appendTerminal("Kiemaen: " + chatData.reply, "msg-assistant");
                             handleMediaOutputs(chatData.reply);
 
-                            await speakAndListenAgain(chatData.reply);
+                            await speakFullAnswerAndListen(chatData.reply);
                         } else {
-                            if (isContinuousActive) startListeningLoop();
+                            if (isContinuousActive) startUnlimitedListening();
                         }
                     } catch (err) {
                         console.log("Loop Error:", err);
-                        if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                        if (isContinuousActive) setTimeout(startUnlimitedListening, 2000);
                     }
                 };
 
                 mediaRecorder.start();
                 isListening = true;
-                updateStatus("Status: Listening closely (Speak fully)...");
-
-                // 12-second speech window allows you to speak longer sentences before processing
-                clearTimeout(speechTimeout);
-                speechTimeout = setTimeout(() => {
-                    if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
-                        isListening = false;
-                        mediaRecorder.stop();
-                    }
-                }, 12000);
+                updateStatus("Status: Listening live (Tap 'Done Talking' when finished)...");
 
             } catch (e) {
                 alert("Microphone permission needed.");
@@ -151,22 +151,33 @@
             }
         }
 
-        function stopListeningLoop() {
+        function stopSpeakingAndSend() {
+            if (isListening && mediaRecorder && mediaRecorder.state === "recording") {
+                isListening = false;
+                mediaRecorder.stop();
+                document.getElementById("manualStopBtn").style.display = "none";
+            }
+        }
+
+        function stopListening() {
             isListening = false;
-            clearTimeout(speechTimeout);
             if (mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
             }
         }
 
-        async function speakAndListenAgain(text) {
-            const cleanText = text.replace(/https?:\/\/[^\s]+/g, "").substring(0, 300);
+        async function speakFullAnswerAndListen(text) {
+            // Removes markdown links/URLs from speech audio while reading the entire text response
+            const cleanText = text.replace(/https?:\/\/[^\s]+/g, "");
             if (!cleanText.trim()) {
-                if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                if (isContinuousActive) {
+                    document.getElementById("manualStopBtn").style.display = "block";
+                    startUnlimitedListening();
+                }
                 return;
             }
 
-            updateStatus("Status: Kiemaen is speaking...");
+            updateStatus("Status: Kiemaen is reading the full answer...");
 
             try {
                 const res = await fetch('/tts/speak', {
@@ -176,7 +187,10 @@
                 });
 
                 if (!res.ok) {
-                    if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                    if (isContinuousActive) {
+                        document.getElementById("manualStopBtn").style.display = "block";
+                        startUnlimitedListening();
+                    }
                     return;
                 }
 
@@ -187,9 +201,12 @@
 
                 player.onended = () => {
                     if (isContinuousActive) {
-                        updateStatus("Status: Pausing (2s buffer)...");
+                        updateStatus("Status: Pausing (2s buffer)... Ready for next input.");
                         setTimeout(() => {
-                            if (isContinuousActive) startListeningLoop();
+                            if (isContinuousActive) {
+                                document.getElementById("manualStopBtn").style.display = "block";
+                                startUnlimitedListening();
+                            }
                         }, 2000);
                     }
                 };
@@ -197,7 +214,10 @@
                 await player.play();
             } catch (e) {
                 console.log("Voice error:", e);
-                if (isContinuousActive) setTimeout(startListeningLoop, 2000);
+                if (isContinuousActive) {
+                    document.getElementById("manualStopBtn").style.display = "block";
+                    startUnlimitedListening();
+                }
             }
         }
 
@@ -216,7 +236,32 @@
             const data = await res.json();
             appendTerminal("Kiemaen: " + data.reply, "msg-assistant");
             handleMediaOutputs(data.reply);
-            speakAndListenAgain(data.reply);
+            speakFullAnswerAndListen(data.reply);
+        }
+
+        async function uploadChart() {
+            const fileInput = document.getElementById("chartInput");
+            if (fileInput.files.length === 0) {
+                alert("Please select a chart image first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            appendTerminal("User: [Uploaded Chart Image for Analysis]", "msg-user");
+            updateStatus("Status: Analyzing chart...");
+
+            try {
+                const res = await fetch('/analyze-chart', { method: 'POST', body: formData });
+                const data = await res.json();
+                const analysisText = data.analysis || data.detail || "Analysis complete.";
+                appendTerminal("Kiemaen: " + analysisText, "msg-assistant");
+                speakFullAnswerAndListen(analysisText);
+            } catch (e) {
+                alert("Chart analysis failed: " + e.message);
+            }
+            updateStatus("Status: Standby");
         }
 
         function handleMediaOutputs(reply) {
