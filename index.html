@@ -133,11 +133,19 @@
 
                             await speakFullAnswerAndListen(chatData.reply);
                         } else {
-                            if (isContinuousActive) startUnlimitedListening();
+                            if (isContinuousActive) {
+                                document.getElementById("manualStopBtn").style.display = "block";
+                                startUnlimitedListening();
+                            }
                         }
                     } catch (err) {
                         console.log("Loop Error:", err);
-                        if (isContinuousActive) setTimeout(startUnlimitedListening, 2000);
+                        if (isContinuousActive) {
+                            setTimeout(() => {
+                                document.getElementById("manualStopBtn").style.display = "block";
+                                startUnlimitedListening();
+                            }, 2000);
+                        }
                     }
                 };
 
@@ -167,7 +175,6 @@
         }
 
         async function speakFullAnswerAndListen(text) {
-            // Removes markdown links/URLs from speech audio while reading the entire text response
             const cleanText = text.replace(/https?:\/\/[^\s]+/g, "");
             if (!cleanText.trim()) {
                 if (isContinuousActive) {
@@ -177,7 +184,7 @@
                 return;
             }
 
-            updateStatus("Status: Kiemaen is reading the full answer...");
+            updateStatus("Status: Kiemaen is reading the full answer aloud...");
 
             try {
                 const res = await fetch('/tts/speak', {
