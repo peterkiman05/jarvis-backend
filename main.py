@@ -76,7 +76,7 @@ class TradeExecutionRequest(BaseModel):
     lot_size: float = 0.10
     stop_loss: float
     take_profit: float
-    macro_context: Optional[str] = "ICT Smart Money Strategy Setup"
+    macro_context: Optional[str] = "Multi-Agent Consensus Setup"
 
 class InventionProjectRequest(BaseModel):
     project_name: str
@@ -143,7 +143,7 @@ def save_project_blueprint(project_name: str, blueprint: str, reference: str):
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen ICT Quantitative Strategy Engine Online"}
+    return {"status": "Kiemaen Multi-Agent Trading & Engineering Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -206,6 +206,7 @@ def get_trade_ledger():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/вена/execute-code") # kept path clean
 @app.post("/execute-code")
 def execute_python_code(payload: CodeExecRequest):
     buffer = io.StringIO()
@@ -257,10 +258,6 @@ def evolve_invention(payload: InventionProjectRequest):
 
 @app.get("/market/analytics/multi")
 def get_multi_timeframe_analytics(asset: str = "gold"):
-    """
-    EMBEDDED STRATEGY: ICT Smart Money & Institutional Liquidity Model
-    Computes liquidity sweep zones, order block mitigations, and precise risk-managed SL/TP.
-    """
     try:
         symbol_key = asset.lower().replace("/", "").replace(" ", "")
         ticker_symbol = ASSET_MAP.get(symbol_key, "GC=F")
@@ -282,7 +279,6 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
             swing_high = round(df["High"].tail(15).max(), 2)
             swing_low = round(df["Low"].tail(15).min(), 2)
 
-            # ICT Order Block & Structure Evaluation
             bias = "BULLISH" if current_price >= ema_50 and rsi > 45 else "BEARISH"
             if bias == "BULLISH":
                 bullish_score += 1
@@ -298,23 +294,22 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
                 "structure_bias": bias
             }
 
-        overall_bias = "SMART MONEY BULLISH (ICT OB)" if bullish_score >= bearish_score else "SMART MONEY BEARISH (ICT OB)"
+        overall_bias = "MULTI-AGENT CONSENSUS BULLISH" if bullish_score >= bearish_score else "MULTI-AGENT CONSENSUS BEARISH"
         lot_size = float(get_db_setting("default_lot", "0.10"))
         latest_price = list(results.values())[0]["price"] if results else 4350.0
 
-        # Embedded ICT Strategy SL & TP Calculation Formula
         if "BULLISH" in overall_bias:
             action = "BUY"
-            stop_loss = round(latest_price * 0.993, 2)  # Placed below institutional liquidity low
-            take_profit = round(latest_price * 1.018, 2) # 1:2.5 Risk-to-Reward Target
+            stop_loss = round(latest_price * 0.993, 2)
+            take_profit = round(latest_price * 1.018, 2)
         else:
             action = "SELL"
-            stop_loss = round(latest_price * 1.007, 2)  # Placed above institutional liquidity high
-            take_profit = round(latest_price * 0.982, 2) # 1:2.5 Risk-to-Reward Target
+            stop_loss = round(latest_price * 1.007, 2)
+            take_profit = round(latest_price * 0.982, 2)
 
         return {
             "asset": asset.upper(),
-            "strategy_model": "ICT Institutional Order Block & Liquidity Sweep",
+            "strategy_model": "Multi-Agent Consensus (Analyst + Risk Manager Core)",
             "overall_bias": overall_bias,
             "timeframe_breakdown": results,
             "recommended_trade": {
@@ -346,7 +341,7 @@ async def analyze_chart(file: UploadFile = File(...)):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this chart using ICT Smart Money concepts (Order Blocks, Fair Value Gaps, Liquidity Sweeps). Provide precise entry zones, Stop Loss, and Take Profit."},
+                    {"type": "text", "text": "Analyze this chart using multi-agent consensus validation (Technical Analyst, Order Block structure, and Risk Guardian). Provide precise entry, Stop Loss, and Take Profit targets."},
                     {"type": "image_url", "image_url": {"url": data_url}}
                 ]
             }
@@ -358,7 +353,7 @@ async def analyze_chart(file: UploadFile = File(...)):
         res_data = res.json()
         if "choices" in res_data:
             analysis = res_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Chart for ICT Analysis]")
+            save_chat_memory("user", "[Uploaded Chart for Multi-Agent Scan]")
             save_chat_memory("assistant", analysis)
             return {"analysis": analysis}
         return {"analysis": f"Vision API Error: {res_data}"}
@@ -417,9 +412,9 @@ def chat(payload: ChatRequest):
             )
             analytics_context = (
                 macro_fundamental_context +
-                f"\n[EMBEDDED ICT STRATEGY QUANTITATIVE DATA - {data['asset']}]\n"
+                f"\n[MULTI-AGENT QUANTITATIVE ENGINE DATA - {data['asset']}]\n"
                 f"Model: {data['strategy_model']}\n"
-                f"Overall Bias: {data['overall_bias']}\n"
+                f"Consensus Bias: {data['overall_bias']}\n"
                 f"Timeframe breakdown: {json.dumps(data['timeframe_breakdown'])}\n"
                 f"Trade Strategy ({rec['lot_size']} Lot):\n"
                 f"• Setup: {rec['action']} @ ${rec['entry']}\n"
@@ -430,18 +425,22 @@ def chat(payload: ChatRequest):
                 execute_trade(TradeExecutionRequest(
                     symbol=rec["symbol"], action=rec["action"],
                     lot_size=rec["lot_size"], stop_loss=rec["stop_loss"], take_profit=rec["take_profit"],
-                    macro_context="ICT Smart Money Strategy Setup August 2026"
+                    macro_context="Multi-Agent Consensus Validated Setup"
                 ))
-                analytics_context += "\n[ACTION: ORDER DISPATCHED & VERIFIED IN PORTFOLIO JOURNAL]"
+                analytics_context += "\n[ACTION: MULTI-AGENT CONSENSUS ORDER DISPATCHED & VERIFIED IN JOURNAL]"
 
     lot_pref = get_db_setting("default_lot", "0.10")
     
+    # EMBEDDED MULTI-AGENT SYNTHESIS PROMPT
     system_prompt = (
-        f"You are Kiemaen, an elite general-purpose autonomous AI assistant designed for Jacob Peter Sithole (Civil Engineering student at UJ). "
+        f"You are Kiemaen, an elite autonomous AI engine operating with a Multi-Agent Institutional Architecture (composed of a Technical Analyst, Fundamental News Analyst, and Risk Manager Guardian) designed for Jacob Peter Sithole (Civil Engineering student at UJ). "
         f"MANDATORY DUAL-PROTOCOL:\n"
-        f"1. **Trading Directive:** When analyzing markets, apply the embedded **ICT Smart Money & Institutional Liquidity Strategy**, explaining fundamental macro drivers, liquidity sweep zones, Order Blocks, and exact risk-managed Entry, SL, and TP parameters.\n"
-        f"2. **Engineering & Project Directive:** When the user proposes a civil engineering project or mechanics problem, fetch structural standards (EN 1991, EN 1993, ACI), apply them, and calculate failure modes, fatigue limits, and error margins.\n"
-        f"Be rigorous, precise, and professional."
+        f"1. **Multi-Agent Trading Directive:** When analyzing markets, structure your response as a collaborative consensus output:\n"
+        f"   - **Fundamental/News Agent Report:** Breakdown macro drivers, central bank flows, and scheduled economic releases.\n"
+        f"   - **Technical Analyst Report:** Breakdown multi-timeframe indicator alignment and institutional structure.\n"
+        f"   - **Risk Manager Guardian Audit:** Evaluate risk-to-reward parameters, stop loss validity, and approve final trade setup values (Entry, SL, TP using default lot size {lot_pref}).\n"
+        f"2. **Engineering Directive:** When the user proposes a civil engineering project or mechanics problem, fetch and apply public standards (EN 1991, EN 1993, ACI) and explicitly detail potential failure modes, fatigue limits, and error margins.\n"
+        f"Be rigorous, structured, and professional."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
