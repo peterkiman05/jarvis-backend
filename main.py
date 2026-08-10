@@ -40,7 +40,7 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS project_state (key TEXT PRIMARY KEY, data TEXT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS project_states (project_name TEXT PRIMARY KEY, blueprint TEXT, reference TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_lot', '0.10')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('risk_reward', '1:2')")
     conn.commit()
@@ -63,12 +63,10 @@ class TradeExecutionRequest(BaseModel):
     stop_loss: float
     take_profit: float
 
-class VideoModifyRequest(BaseModel):
-    prompt: str
-    image_url: Optional[str] = None
-
-class CodeExecRequest(BaseModel):
-    code: str
+class InventionProjectRequest(BaseModel):
+    project_name: str
+    description: str
+    reference_project: Optional[str] = None
 
 def get_db_setting(key: str, default: str) -> str:
     try:
@@ -102,11 +100,32 @@ def fetch_recent_history(limit: int = 8) -> List[Dict[str, str]]:
     except:
         return []
 
+def get_project_blueprint(project_name: str) -> Optional[str]:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT blueprint FROM project_states WHERE project_name=?", (project_name,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except:
+        return None
+
+def save_project_blueprint(project_name: str, blueprint: str, reference: str):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO project_states (project_name, blueprint, reference) VALUES (?, ?, ?)", (project_name, blueprint, reference))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Project State Error: {e}")
+
 @app.get("/")
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Omni Autonomous Engine Online"}
+    return {"status": "Kiemaen Step 2 Omni Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -117,26 +136,12 @@ def reset_memory():
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
 
-@app.post("/execute-code")
-def execute_python_code(payload: CodeExecRequest):
-    """Executes engineering calculations safely in an isolated Python interpreter context."""
-    buffer = io.StringIO()
-    sys.stdout = buffer
-    try:
-        exec_globals = {"pd": pd, "yf": yf}
-        exec(payload.code, exec_globals)
-        sys.stdout = sys.__stdout__
-        return {"output": buffer.getvalue()}
-    except Exception as e:
-        sys.stdout = sys.__stdout__
-        return {"error": str(e)}
-
 @app.post("/tts/speak")
 def speak_audio(payload: TTSRequest):
     try:
         clean_text = payload.text.replace("\n", ". ")
         if len(clean_text) > 800:
-            clean_text = clean_text[:800] + "... complete output displayed on screen."
+            clean_text = clean_text[:800] + "... output continued on screen."
 
         tts = gTTS(text=clean_text, lang='en', slow=False)
         fp = io.BytesIO()
@@ -145,6 +150,27 @@ def speak_audio(payload: TTSRequest):
         return StreamingResponse(fp, media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/invention/evolve")
+def evolve_invention(payload: InventionProjectRequest):
+    reference_data = ""
+    if payload.reference_project:
+        existing = get_project_blueprint(payload.reference_project)
+        if existing:
+            reference_data = f"\n[REFERENCE PROJECT BLUEPRINT ({payload.reference_project})]:\n{existing}\n"
+
+    design_prompt = (
+        f"You are Kiemaen's Advanced R&D and Invention Engine. "
+        f"New Project Name: {payload.project_name}. Description: {payload.description}. "
+        f"{reference_data}"
+        f"Provide a comprehensive technical blueprint, component breakdown, hardware/software stack, and step-by-step integration guide building directly upon the reference design."
+    )
+    
+    # Process through core model logic
+    res = chat(ChatRequest(message=design_prompt))
+    reply_text = res.get("reply", "")
+    save_project_blueprint(payload.project_name, reply_text, payload.reference_project or "None")
+    return {"reply": reply_text}
 
 @app.get("/market/analytics/multi")
 def get_multi_timeframe_analytics(asset: str = "gold"):
@@ -177,7 +203,7 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
 
         overall_bias = "STRONG BULLISH" if bullish_count > bearish_count else "STRONG BEARISH"
         lot_size = float(get_db_setting("default_lot", "0.10"))
-        latest_price = list(results.values())[0]["price"] if results else 4325.0
+        latest_price = list(results.values())[0]["price"] if results else 4350.0
 
         sl = round(latest_price * 0.995, 2) if "BULLISH" in overall_bias else round(latest_price * 1.005, 2)
         tp = round(latest_price * 1.010, 2) if "BULLISH" in overall_bias else round(latest_price * 0.990, 2)
@@ -215,7 +241,7 @@ async def analyze_chart(file: UploadFile = File(...)):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this technical trading chart or civil engineering mechanics diagram in detail."},
+                    {"type": "text", "text": "Analyze this technical trading chart or civil engineering mechanics diagram in detail. Provide exact metrics, support/resistance levels, or formula breakdowns."},
                     {"type": "image_url", "image_url": {"url": data_url}}
                 ]
             }
@@ -227,7 +253,7 @@ async def analyze_chart(file: UploadFile = File(...)):
         res_data = res.json()
         if "choices" in res_data:
             analysis = res_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Image / Diagram]")
+            save_chat_memory("user", "[Uploaded Diagram/Chart]")
             save_chat_memory("assistant", analysis)
             return {"analysis": analysis}
         return {"analysis": f"Vision API Error: {res_data}"}
