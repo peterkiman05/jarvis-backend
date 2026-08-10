@@ -3,422 +3,387 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KIEMAEN // OMNI-HUD PRIME</title>
+    <title>KIEMAEN // EXECUTIVE TERMINAL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=JetBrains+Mono:wght@300;400;600&display=swap');
-
         :root {
-            --bg-base: #02040a;
-            --surface-glass: rgba(6, 11, 25, 0.85);
-            --border-glow: rgba(0, 243, 255, 0.25);
-            --border-active: rgba(0, 243, 255, 0.75);
+            --bg-primary: #090a0f;
+            --surface-card: #0e1117;
+            --surface-elevated: #161b22;
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-active: rgba(255, 255, 255, 0.2);
             
-            --neon-cyan: #00f3ff;
-            --neon-green: #00ff66;
-            --neon-purple: #bd00ff;
-            --neon-red: #ff0055;
-            --neon-amber: #ffaa00;
-
-            --text-main: #e2e8f0;
-            --text-muted: #64748b;
+            --accent-silver: #e2e8f0;
+            --accent-muted: #8b949e;
+            --accent-green: #3fb950;
+            --accent-blue: #58a6ff;
+            --accent-red: #f85149;
+            
+            --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }
 
         body {
-            background-color: var(--bg-base);
-            background-image: 
-                radial-gradient(circle at 50% -20%, rgba(0, 243, 255, 0.15) 0%, transparent 60%),
-                radial-gradient(circle at 100% 100%, rgba(189, 0, 255, 0.1) 0%, transparent 50%),
-                linear-gradient(rgba(2, 4, 10, 0.95), rgba(2, 4, 10, 0.95)),
-                url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
-            color: var(--text-main);
-            font-family: 'JetBrains Mono', monospace;
+            background-color: var(--bg-primary);
+            color: var(--accent-silver);
+            font-family: var(--font-sans);
             margin: 0;
+            padding: 24px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .workspace {
+            width: 100%;
+            max-width: 1100px;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+            height: calc(100vh - 48px);
+        }
+
+        @media (max-width: 850px) {
+            .workspace {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
+
+        /* Sidebar Telemetry & Control Panel */
+        .sidebar {
+            background-color: var(--surface-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
             padding: 20px;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            overflow-x: hidden;
+            gap: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }
 
-        .container {
-            width: 100%;
-            max-width: 750px;
+        .brand-block {
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 16px;
+        }
+
+        .brand-title {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: var(--accent-silver);
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand-subtitle {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--accent-muted);
+            margin-top: 4px;
+        }
+
+        .telemetry-ticker {
+            background: var(--surface-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 11px;
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 6px;
         }
 
-        /* Top HUD Header */
-        .hud-header {
-            background: var(--surface-glass);
-            border: 1px solid var(--border-glow);
-            border-radius: 14px;
-            padding: 16px 20px;
+        .ticker-row {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            backdrop-filter: blur(16px);
-            box-shadow: 0 0 20px rgba(0, 243, 255, 0.05), inset 0 0 15px rgba(0, 243, 255, 0.02);
-            position: relative;
-            overflow: hidden;
+            color: var(--accent-muted);
         }
 
-        .hud-header::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; width: 3px; height: 100%;
-            background: var(--neon-cyan);
-            box-shadow: 0 0 10px var(--neon-cyan);
+        .ticker-val {
+            color: var(--accent-green);
+            font-weight: 500;
         }
 
-        .hud-title-group h1 {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 20px;
-            font-weight: 900;
-            color: var(--neon-cyan);
-            letter-spacing: 3px;
-            margin: 0;
-            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
-        }
-
-        .hud-title-group p {
-            font-size: 10px;
-            color: var(--text-muted);
-            letter-spacing: 2px;
-            margin: 4px 0 0 0;
-            text-transform: uppercase;
-        }
-
-        .core-status-badge {
-            background: rgba(0, 255, 102, 0.1);
-            border: 1px solid var(--neon-green);
-            color: var(--neon-green);
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 10px;
-            font-family: 'Orbitron', sans-serif;
-            letter-spacing: 1px;
+        .control-stack {
             display: flex;
-            align-items: center;
-            gap: 6px;
-            box-shadow: 0 0 10px rgba(0, 255, 102, 0.2);
+            flex-direction: column;
+            gap: 8px;
         }
 
-        .pulse-dot {
-            width: 6px; height: 6px;
-            background: var(--neon-green);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--neon-green);
-            animation: pulseGlow 1.5s infinite;
-        }
-
-        @keyframes pulseGlow {
-            0% { transform: scale(1); opacity: 1; box-shadow: 0 0 4px var(--neon-green); }
-            50% { transform: scale(1.4); opacity: 0.4; box-shadow: 0 0 12px var(--neon-green); }
-            100% { transform: scale(1); opacity: 1; box-shadow: 0 0 4px var(--neon-green); }
-        }
-
-        /* Glassmorphism Cards */
-        .card {
-            background: var(--surface-glass);
-            border: 1px solid var(--border-glow);
-            border-radius: 14px;
-            padding: 20px;
-            backdrop-filter: blur(16px);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-            transition: border-color 0.3s ease;
-        }
-
-        .card:hover {
-            border-color: rgba(0, 243, 255, 0.4);
-        }
-
-        /* Interactive Grid Buttons */
-        .control-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-bottom: 14px;
-        }
-
-        .hud-btn {
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--border-glow);
-            color: var(--text-main);
-            padding: 12px 10px;
-            border-radius: 8px;
-            font-family: 'Orbitron', sans-serif;
-            font-size: 11px;
-            font-weight: 600;
+        .btn {
+            background: var(--surface-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--accent-silver);
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-family: var(--font-sans);
+            font-size: 12px;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.15s ease;
+            text-align: left;
             display: flex;
             align-items: center;
+            justify-content: space-between;
+        }
+
+        .btn:hover {
+            background: #21262d;
+            border-color: var(--border-active);
+        }
+
+        .btn-primary {
+            background: #238636;
+            border-color: rgba(240, 246, 252, 0.1);
+            color: #ffffff;
             justify-content: center;
-            gap: 6px;
-            text-align: center;
-            letter-spacing: 0.5px;
+            font-weight: 600;
         }
 
-        .hud-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0, 243, 255, 0.2);
+        .btn-primary:hover {
+            background: #2ea043;
         }
 
-        .btn-cyan { border-color: var(--neon-cyan); color: var(--neon-cyan); }
-        .btn-cyan:hover { background: rgba(0, 243, 255, 0.15); }
+        .btn-danger {
+            color: var(--accent-red);
+        }
 
-        .btn-green { border-color: var(--neon-green); color: var(--neon-green); }
-        .btn-green:hover { background: rgba(0, 255, 102, 0.15); }
-
-        .btn-purple { border-color: var(--neon-purple); color: var(--neon-purple); }
-        .btn-purple:hover { background: rgba(189, 0, 255, 0.15); }
-
-        .btn-red { border-color: var(--neon-red); color: var(--neon-red); }
-        .btn-red:hover { background: rgba(255, 0, 85, 0.15); }
-
-        .btn-amber { border-color: var(--neon-amber); color: var(--neon-amber); }
-        .btn-amber:hover { background: rgba(255, 170, 0, 0.15); }
-
-        .btn-full { grid-column: span 3; }
-
-        /* Audio Visualizer Canvas */
-        .visualizer-box {
-            background: #010307;
-            border: 1px solid var(--border-glow);
-            border-radius: 8px;
-            height: 45px;
-            margin-bottom: 14px;
+        /* Main Workspace Panel */
+        .main-panel {
+            background-color: var(--surface-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
             display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
+            flex-direction: column;
             overflow: hidden;
-        }
-
-        .wave-bars {
-            display: flex;
-            gap: 3px;
-            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
             height: 100%;
         }
 
-        .wave-bar {
-            width: 3px;
-            height: 10px;
-            background: var(--neon-cyan);
-            border-radius: 2px;
-            transition: height 0.1s ease;
-            box-shadow: 0 0 6px var(--neon-cyan);
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface-elevated);
         }
 
-        /* File Upload & Input Row */
-        .input-panel {
+        .panel-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--accent-muted);
+            font-family: var(--font-mono);
+            letter-spacing: 0.02em;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--accent-green);
+            background: rgba(63, 185, 80, 0.1);
+            padding: 4px 8px;
+            border-radius: 20px;
+            border: 1px solid rgba(63, 185, 80, 0.2);
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--accent-green);
+            border-radius: 50%;
+            box-shadow: 0 0 6px var(--accent-green);
+        }
+
+        /* Chat / Terminal Stream */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-container::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 3px;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-width: 90%;
+        }
+
+        .message.user {
+            align-self: flex-end;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            width: 100%;
+        }
+
+        .message-sender {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--accent-muted);
+        }
+
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .user .message-bubble {
+            background: #1f6feb22;
+            border-color: rgba(88, 166, 255, 0.3);
+            color: var(--accent-silver);
+        }
+
+        .assistant .message-bubble {
+            background: var(--surface-elevated);
+            color: var(--accent-silver);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        /* Input Toolbar */
+        .input-toolbar {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-subtle);
+            background: var(--surface-elevated);
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
 
-        .upload-row {
+        .upload-strip {
             display: flex;
-            gap: 10px;
             align-items: center;
-            background: rgba(1, 3, 7, 0.6);
-            border: 1px dashed var(--border-glow);
-            padding: 8px 12px;
-            border-radius: 8px;
-        }
-
-        .upload-row label {
+            justify-content: space-between;
+            font-family: var(--font-mono);
             font-size: 11px;
-            color: var(--text-muted);
-            white-space: nowrap;
+            color: var(--accent-muted);
         }
 
         input[type="file"] {
             font-size: 11px;
-            color: var(--text-main);
-            width: 100%;
+            color: var(--accent-muted);
         }
 
-        .command-row {
+        .input-row {
             display: flex;
             gap: 10px;
         }
 
         input[type="text"] {
             flex: 1;
-            background: rgba(1, 3, 7, 0.8);
-            border: 1px solid var(--border-glow);
-            color: var(--neon-cyan);
-            padding: 12px 16px;
-            border-radius: 8px;
-            font-family: inherit;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-subtle);
+            color: var(--accent-silver);
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-family: var(--font-sans);
             font-size: 13px;
             outline: none;
-            transition: all 0.3s;
+            transition: border-color 0.15s;
         }
 
         input[type="text"]:focus {
-            border-color: var(--neon-cyan);
-            box-shadow: 0 0 15px rgba(0, 243, 255, 0.25);
+            border-color: var(--accent-blue);
         }
 
-        /* Cyberpunk Terminal Window */
-        .terminal-wrapper {
-            position: relative;
-        }
-
-        .terminal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-family: 'Orbitron', sans-serif;
-            font-size: 10px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-            letter-spacing: 1px;
-        }
-
-        .terminal {
-            background: #010307;
-            border: 1px solid var(--border-glow);
-            border-radius: 10px;
-            height: 380px;
-            overflow-y: auto;
-            padding: 16px;
-            font-size: 13px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
-            scroll-behavior: smooth;
-        }
-
-        .terminal::-webkit-scrollbar {
-            width: 6px;
-        }
-        .terminal::-webkit-scrollbar-thumb {
-            background: rgba(0, 243, 255, 0.2);
-            border-radius: 3px;
-        }
-
-        .msg-user { 
-            color: var(--neon-cyan); 
-            text-align: left; 
-            border-left: 2px solid var(--neon-cyan);
-            padding-left: 10px;
-        }
-        
-        .msg-assistant { 
-            color: var(--neon-green); 
-            text-align: left; 
-            white-space: pre-wrap; 
-            line-height: 1.5;
-            border-left: 2px solid var(--neon-green);
-            padding-left: 10px;
-            background: rgba(0, 255, 102, 0.02);
-            padding: 8px 10px;
-            border-radius: 0 6px 6px 0;
-        }
-
-        /* Media Stream Output */
-        .media-container {
+        /* Media Viewport */
+        .media-viewer {
+            padding: 0 20px 16px 20px;
             display: none;
         }
 
         video, img {
             width: 100%;
-            border-radius: 10px;
-            margin-top: 10px;
-            max-height: 280px;
+            border-radius: 8px;
+            max-height: 220px;
             object-fit: cover;
-            border: 1px solid var(--border-glow);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
-        }
-
-        /* Live Status Footer */
-        .footer-status {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 10px;
-            color: var(--text-muted);
-            font-family: 'Orbitron', sans-serif;
-            letter-spacing: 1px;
-            padding-top: 4px;
+            border: 1px solid var(--border-subtle);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- HUD Header -->
-        <div class="hud-header">
-            <div class="hud-title-group">
-                <h1>KIEMAEN // PRIME</h1>
-                <p>AUTONOMOUS NEURAL INTERFACE &bull; J.P. SITHOLE</p>
-            </div>
-            <div class="core-status-badge">
-                <div class="pulse-dot"></div>
-                <span id="coreStatusText">CORE ONLINE</span>
-            </div>
-        </div>
-        
-        <!-- Control Deck -->
-        <div class="card">
-            <div class="control-grid">
-                <button class="hud-btn btn-purple" onclick="testAudioUnlock()">🔊 Unlock Audio</button>
-                <button class="hud-btn btn-red" onclick="clearMemory()">🧹 Purge Memory</button>
-                <button class="hud-btn btn-amber" onclick="triggerSystemDiagnostic()">⚙️ Diagnostics</button>
-                <button id="toggleLoopBtn" class="hud-btn btn-green btn-full" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (Unlimited)</button>
-                <button id="manualStopBtn" class="hud-btn btn-red btn-full" style="display:none;" onclick="stopSpeakingAndSend()">🛑 Done Talking (Process Stream)</button>
+    <div class="workspace">
+        <!-- Sidebar Controls -->
+        <div class="sidebar">
+            <div class="brand-block">
+                <h1 class="brand-title">KIEMAEN <span>EXECUTIVE</span></h1>
+                <div class="brand-subtitle">SYSTEM ID: J.P. SITHOLE // UJ</div>
             </div>
 
-            <!-- Audio Frequency Visualizer Simulation -->
-            <div class="visualizer-box" id="visualizerBox">
-                <div class="wave-bars" id="waveBars">
-                    <!-- Generated dynamically via JS -->
+            <div class="telemetry-ticker">
+                <div class="ticker-row"><span>XAU/USD FEED:</span> <span class="ticker-val" id="goldTicker">ACTIVE ($4,350)</span></div>
+                <div class="ticker-row"><span>CORE MEMORY:</span> <span class="ticker-val">SQLITE GRAPH</span></div>
+                <div class="ticker-row"><span>VOICE ENGINE:</span> <span class="ticker-val" id="voiceStatusTicker">STANDBY</span></div>
+            </div>
+
+            <div class="control-stack">
+                <button class="btn" onclick="testAudioUnlock()"><span>🔊 Initialize Audio Subsystem</span></button>
+                <button class="btn btn-primary" id="toggleLoopBtn" onclick="toggleContinuousSession()"><span>🎙️ Continuous Omni-Stream</span></button>
+                <button class="btn" id="manualStopBtn" style="display:none; background: #da3633; color: white;" onclick="stopSpeakingAndSend()"><span>🛑 Finish & Transmit Speech</span></button>
+                <button class="btn" onclick="uploadChart()"><span>📊 Process Vision Diagram</span></button>
+                <button class="btn btn-danger" onclick="clearMemory()"><span>🧹 Purge Session Context</span></button>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <div class="main-panel">
+            <div class="panel-header">
+                <div class="panel-title">// WORKSPACE_TERMINAL_STREAM</div>
+                <div class="status-pill">
+                    <div class="dot"></div>
+                    <span id="status">OPERATIONAL</span>
                 </div>
             </div>
 
-            <!-- Input Panel -->
-            <div class="input-panel">
-                <div class="upload-row">
-                    <label>VISION INPUT:</label>
+            <div class="chat-container" id="terminal">
+                <div class="message assistant">
+                    <div class="message-sender">KIEMAEN // EXECUTIVE ENGINE</div>
+                    <div class="message-bubble">Workspace online. High-precision terminal interface initialized. Ready for civil engineering mechanics, quantitative market analysis, and project R&D blueprints.</div>
+                </div>
+            </div>
+
+            <div class="media-viewer" id="mediaContainer">
+                <div id="mediaOutput"></div>
+            </div>
+
+            <div class="input-toolbar">
+                <div class="upload-strip">
+                    <span>DIAGRAM / CHART ATTACHMENT:</span>
                     <input type="file" id="chartInput" accept="image/*">
                 </div>
-                <button class="hud-btn btn-amber" onclick="uploadChart()">📊 Execute Diagram / Chart Vision Scan</button>
-
-                <div class="command-row">
-                    <input type="text" id="textInput" placeholder="Enter directive for Civil Engineering, Trading, or R&D..." onkeydown="if(event.key==='Enter') sendText()">
-                    <button class="hud-btn btn-cyan" onclick="sendText()">TRANSMIT</button>
+                <div class="input-row">
+                    <input type="text" id="textInput" placeholder="Enter directive or engineering problem..." onkeydown="if(event.key==='Enter') sendText()">
+                    <button class="btn btn-primary" onclick="sendText()" style="padding: 0 16px;">Send</button>
                 </div>
             </div>
-
-            <div class="footer-status" style="margin-top: 14px;">
-                <span id="status">STATUS: SYSTEM STANDBY // LISTENING BUFFER READY</span>
-                <span>SECURE LINK: GROQ_L33T</span>
-            </div>
-        </div>
-
-        <!-- Terminal Feed -->
-        <div class="card terminal-wrapper">
-            <div class="terminal-header">
-                <span>// NEURAL LOG STREAM</span>
-                <span style="color: var(--neon-cyan);">BUFFER: 100%</span>
-            </div>
-            <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: Prime HUD initialized. Voice-to-voice stream, multi-timeframe analytics, and agentic memory active. Ready for high-precision deployment.</div>
-            </div>
-        </div>
-
-        <!-- Media Stream Output -->
-        <div class="card media-container" id="mediaContainer">
-            <div class="terminal-header" style="margin-bottom: 6px;">
-                <span>// GENERATED VISUAL STREAM</span>
-            </div>
-            <div id="mediaOutput"></div>
         </div>
     </div>
 
@@ -429,74 +394,39 @@
         let audioChunks = [];
         let isContinuousActive = false;
         let isListening = false;
-        let vizInterval = null;
-
-        // Initialize Visualizer Waveform Animation
-        const waveContainer = document.getElementById("waveBars");
-        for (let i = 0; i < 35; i++) {
-            const bar = document.createElement("div");
-            bar.className = "wave-bar";
-            waveContainer.appendChild(bar);
-        }
-
-        function startVisualizer(active) {
-            const bars = document.querySelectorAll(".wave-bar");
-            if (active) {
-                vizInterval = setInterval(() => {
-                    bars.forEach(bar => {
-                        const randomHeight = Math.floor(Math.random() * 35) + 5;
-                        bar.style.height = randomHeight + "px";
-                        bar.style.background = "var(--neon-cyan)";
-                    });
-                }, 80);
-            } else {
-                clearInterval(vizInterval);
-                bars.forEach(bar => {
-                    bar.style.height = "6px";
-                    bar.style.background = "var(--text-muted)";
-                });
-            }
-        }
 
         async function testAudioUnlock() {
             try {
                 const res = await fetch('/tts/speak', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: "Audio subsystem unlocked. Prime link established." })
+                    body: JSON.stringify({ text: "Audio subsystem online." })
                 });
                 const blob = await res.blob();
                 const player = document.getElementById("audioPlayer");
                 player.src = URL.createObjectURL(blob);
                 await player.play();
-                updateStatus("Audio Subsystem Online");
+                updateStatus("Audio Active");
             } catch (e) {
-                alert("Audio unlock failed: " + e.message);
+                alert("Audio initialization failed: " + e.message);
             }
-        }
-
-        function triggerSystemDiagnostic() {
-            appendTerminal("Kiemaen: Running full core diagnostic... Database integrity verified. GPU inference pipelines online. Multi-timeframe risk model active.", "msg-assistant");
-            updateStatus("Diagnostics Complete: All Systems Optimal");
         }
 
         function toggleContinuousSession() {
             if (!isContinuousActive) {
                 isContinuousActive = true;
-                document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
-                document.getElementById("toggleLoopBtn").className = "hud-btn btn-red btn-full";
+                document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Stream";
                 document.getElementById("manualStopBtn").style.display = "flex";
-                updateStatus("Listening Indefinitely (Speak Freely)...");
-                startVisualizer(true);
+                document.getElementById("voiceStatusTicker").innerText = "LISTENING";
+                updateStatus("Listening...");
                 startUnlimitedListening();
             } else {
                 isContinuousActive = false;
                 stopListening();
-                document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (Unlimited)";
-                document.getElementById("toggleLoopBtn").className = "hud-btn btn-green btn-full";
+                document.getElementById("toggleLoopBtn").innerText = "🎙️ Continuous Omni-Stream";
                 document.getElementById("manualStopBtn").style.display = "none";
-                updateStatus("System Status: Standby");
-                startVisualizer(false);
+                document.getElementById("voiceStatusTicker").innerText = "STANDBY";
+                updateStatus("Operational");
             }
         }
 
@@ -513,8 +443,7 @@
 
                 mediaRecorder.onstop = async () => {
                     if (!isContinuousActive) return;
-                    updateStatus("Processing Neural Audio Stream...");
-                    startVisualizer(false);
+                    updateStatus("Processing Audio...");
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const formData = new FormData();
                     formData.append("file", audioBlob, "voice.webm");
@@ -524,7 +453,7 @@
                         const transData = await transRes.json();
                         
                         if (transData.text && transData.text.trim().length > 1) {
-                            appendTerminal("User: " + transData.text, "msg-user");
+                            appendTerminal(transData.text, "user");
 
                             const chatRes = await fetch('/chat', {
                                 method: 'POST',
@@ -532,23 +461,21 @@
                                 body: JSON.stringify({ message: transData.text })
                             });
                             const chatData = await chatRes.json();
-                            appendTerminal("Kiemaen: " + chatData.reply, "msg-assistant");
+                            appendTerminal(chatData.reply, "assistant");
                             handleMediaOutputs(chatData.reply);
 
                             await speakFullAnswerAndListen(chatData.reply);
                         } else {
                             if (isContinuousActive) {
                                 document.getElementById("manualStopBtn").style.display = "flex";
-                                startVisualizer(true);
                                 startUnlimitedListening();
                             }
                         }
                     } catch (err) {
-                        console.log("Loop Error:", err);
+                        console.log("Stream Error:", err);
                         if (isContinuousActive) {
                             setTimeout(() => {
                                 document.getElementById("manualStopBtn").style.display = "flex";
-                                startVisualizer(true);
                                 startUnlimitedListening();
                             }, 2000);
                         }
@@ -557,7 +484,7 @@
 
                 mediaRecorder.start();
                 isListening = true;
-                updateStatus("Live Listening (Tap 'Done Talking' when finished)");
+                updateStatus("Active Stream Capture");
 
             } catch (e) {
                 alert("Microphone permission required.");
@@ -585,14 +512,12 @@
             if (!cleanText.trim()) {
                 if (isContinuousActive) {
                     document.getElementById("manualStopBtn").style.display = "flex";
-                    startVisualizer(true);
                     startUnlimitedListening();
                 }
                 return;
             }
 
-            updateStatus("Synthesizing Full Speech Output...");
-            startVisualizer(true);
+            updateStatus("Synthesizing Speech...");
 
             try {
                 const res = await fetch('/tts/speak', {
@@ -604,7 +529,6 @@
                 if (!res.ok) {
                     if (isContinuousActive) {
                         document.getElementById("manualStopBtn").style.display = "flex";
-                        startVisualizer(true);
                         startUnlimitedListening();
                     }
                     return;
@@ -616,26 +540,22 @@
                 player.src = audioUrl;
 
                 player.onended = () => {
-                    startVisualizer(false);
                     if (isContinuousActive) {
-                        updateStatus("Buffer Pause (2s)... Ready");
+                        updateStatus("Buffer Pause...");
                         setTimeout(() => {
                             if (isContinuousActive) {
                                 document.getElementById("manualStopBtn").style.display = "flex";
-                                startVisualizer(true);
                                 startUnlimitedListening();
                             }
-                        }, 2000);
+                        }, 1500);
                     }
                 };
 
                 await player.play();
             } catch (e) {
-                console.log("Voice error:", e);
-                startVisualizer(false);
+                console.log("Speech Error:", e);
                 if (isContinuousActive) {
                     document.getElementById("manualStopBtn").style.display = "flex";
-                    startVisualizer(true);
                     startUnlimitedListening();
                 }
             }
@@ -646,8 +566,8 @@
             const text = input.value.trim();
             if (!text) return;
             input.value = "";
-            appendTerminal("User: " + text, "msg-user");
-            updateStatus("Transmitting Command...");
+            appendTerminal(text, "user");
+            updateStatus("Processing...");
 
             const res = await fetch('/chat', {
                 method: 'POST',
@@ -655,34 +575,35 @@
                 body: JSON.stringify({ message: text })
             });
             const data = await res.json();
-            appendTerminal("Kiemaen: " + data.reply, "msg-assistant");
+            appendTerminal(data.reply, "assistant");
             handleMediaOutputs(data.reply);
             speakFullAnswerAndListen(data.reply);
+            updateStatus("Operational");
         }
 
         async function uploadChart() {
             const fileInput = document.getElementById("chartInput");
             if (fileInput.files.length === 0) {
-                alert("Please select a diagram or chart image first.");
+                alert("Please attach a chart or diagram file first.");
                 return;
             }
 
             const formData = new FormData();
             formData.append("file", fileInput.files[0]);
 
-            appendTerminal("User: [Uploaded Diagram/Chart for Vision Analysis]", "msg-user");
-            updateStatus("Running Vision Neural Scan...");
+            appendTerminal("[Uploaded Diagram / Visual Scan]", "user");
+            updateStatus("Analyzing Vision Feed...");
 
             try {
                 const res = await fetch('/analyze-chart', { method: 'POST', body: formData });
                 const data = await res.json();
                 const analysisText = data.analysis || data.detail || "Analysis complete.";
-                appendTerminal("Kiemaen: " + analysisText, "msg-assistant");
+                appendTerminal(analysisText, "assistant");
                 speakFullAnswerAndListen(analysisText);
             } catch (e) {
-                alert("Chart analysis failed: " + e.message);
+                alert("Vision analysis failed: " + e.message);
             }
-            updateStatus("System Status: Standby");
+            updateStatus("Operational");
         }
 
         function handleMediaOutputs(reply) {
@@ -695,28 +616,43 @@
                 if (url.includes(".mp4") || url.includes("mov")) {
                     output.innerHTML = `<video controls autoplay src="${url}"></video>`;
                 } else if (url.includes("image.pollinations.ai")) {
-                    output.innerHTML = `<img src="${url}" alt="Visual Render">`;
+                    output.innerHTML = `<img src="${url}" alt="Render">`;
                 }
             }
         }
 
-        function appendTerminal(text, className) {
+        function appendTerminal(text, role) {
             const term = document.getElementById("terminal");
-            const div = document.createElement("div");
-            div.className = className;
-            div.innerText = text;
-            term.appendChild(div);
+            const msgDiv = document.createElement("div");
+            msgDiv.className = `message ${role}`;
+
+            const sender = document.createElement("div");
+            sender.className = "message-sender";
+            sender.innerText = role === 'user' ? 'J.P. SITHOLE' : 'KIEMAEN // EXECUTIVE ENGINE';
+
+            const bubble = document.createElement("div");
+            bubble.className = "message-bubble";
+            bubble.innerText = text;
+
+            msgDiv.appendChild(sender);
+            msgDiv.appendChild(bubble);
+            term.appendChild(msgDiv);
             term.scrollTop = term.scrollHeight;
         }
 
         async function clearMemory() {
             await fetch('/memory/reset', { method: 'DELETE' });
-            document.getElementById("terminal").innerHTML = '<div class="msg-assistant">Kiemaen: Memory reset. Neural state re-initialized.</div>';
-            updateStatus("Memory Purged");
+            document.getElementById("terminal").innerHTML = `
+                <div class="message assistant">
+                    <div class="message-sender">KIEMAEN // EXECUTIVE ENGINE</div>
+                    <div class="message-bubble">Session memory purged. Terminal state re-initialized.</div>
+                </div>
+            `;
+            updateStatus("Memory Cleared");
         }
 
         function updateStatus(text) {
-            document.getElementById("status").innerText = "STATUS: " + text.toUpperCase();
+            document.getElementById("status").innerText = text.toUpperCase();
         }
     </script>
 </body>
