@@ -128,7 +128,7 @@ def save_project_blueprint(project_name: str, blueprint: str, reference: str):
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Step 3 Autonomous Tool Engine Online"}
+    return {"status": "Kiemaen Production Omni Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -139,9 +139,28 @@ def reset_memory():
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
 
+@app.post("/trade/execute")
+def execute_trade(trade: TradeExecutionRequest):
+    order_payload = {
+        "symbol": trade.symbol,
+        "action": trade.action.upper(),
+        "lot_size": trade.lot_size,
+        "stop_loss": trade.stop_loss,
+        "take_profit": trade.take_profit,
+        "status": "PENDING"
+    }
+    PENDING_TRADES.append(order_payload)
+    return {"status": "ORDER_QUEUED", "details": order_payload}
+
+@app.get("/trade/pending")
+def get_pending_trades():
+    global PENDING_TRADES
+    orders = PENDING_TRADES.copy()
+    PENDING_TRADES.clear()
+    return {"orders": orders}
+
 @app.post("/execute-code")
 def execute_python_code(payload: CodeExecRequest):
-    """Executes engineering calculations and script logic in a sandboxed interpreter."""
     buffer = io.StringIO()
     sys.stdout = buffer
     try:
@@ -329,6 +348,13 @@ def chat(payload: ChatRequest):
                 f"• Setup: {rec['action']} @ ${rec['entry']}\n"
                 f"• Stop Loss: ${rec['stop_loss']} | Take Profit: ${rec['take_profit']}\n"
             )
+
+            if "execute" in user_query or "place trade" in user_query:
+                execute_trade(TradeExecutionRequest(
+                    symbol=rec["symbol"], action=rec["action"],
+                    lot_size=rec["lot_size"], stop_loss=rec["stop_loss"], take_profit=rec["take_profit"]
+                ))
+                analytics_context += "\n[ACTION: ORDER DISPATCHED TO MT5 QUEUE]"
 
     lot_pref = get_db_setting("default_lot", "0.10")
     
