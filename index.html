@@ -30,31 +30,34 @@
             color: var(--accent-silver);
             font-family: var(--font-sans);
             margin: 0;
-            padding: 24px;
+            padding: 20px;
             display: flex;
             justify-content: center;
-            min-height: 100vh;
+            height: 100vh;
             box-sizing: border-box;
+            overflow: hidden; /* Lock body scroll so panels scroll independently */
             -webkit-font-smoothing: antialiased;
         }
 
         .workspace {
             width: 100%;
-            max-width: 1100px;
+            max-width: 1150px;
             display: grid;
             grid-template-columns: 320px 1fr;
             gap: 20px;
-            height: calc(100vh - 48px);
+            height: 100%;
+            max-height: calc(100vh - 40px);
         }
 
         @media (max-width: 850px) {
+            body { overflow-y: auto; }
             .workspace {
                 grid-template-columns: 1fr;
                 height: auto;
             }
         }
 
-        /* Sidebar Telemetry & Control Panel */
+        /* Sidebar Telemetry & Control Panel (Fixed / Non-scrolling) */
         .sidebar {
             background-color: var(--surface-card);
             border: 1px solid var(--border-subtle);
@@ -62,13 +65,16 @@
             padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 16px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            height: 100%;
+            box-sizing: border-box;
+            overflow-y: auto;
         }
 
         .brand-block {
             border-bottom: 1px solid var(--border-subtle);
-            padding-bottom: 16px;
+            padding-bottom: 14px;
         }
 
         .brand-title {
@@ -166,6 +172,7 @@
             overflow: hidden;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
             height: 100%;
+            box-sizing: border-box;
         }
 
         .panel-header {
@@ -175,6 +182,7 @@
             justify-content: space-between;
             align-items: center;
             background: var(--surface-elevated);
+            flex-shrink: 0;
         }
 
         .panel-title {
@@ -206,7 +214,7 @@
             box-shadow: 0 0 6px var(--accent-green);
         }
 
-        /* Chat / Terminal Stream */
+        /* Chat / Terminal Stream (Scrolls independently) */
         .chat-container {
             flex: 1;
             overflow-y: auto;
@@ -216,6 +224,7 @@
             gap: 16px;
             font-size: 13px;
             line-height: 1.5;
+            scroll-behavior: smooth;
         }
 
         .chat-container::-webkit-scrollbar {
@@ -268,7 +277,7 @@
             white-space: pre-wrap;
         }
 
-        /* Input Toolbar */
+        /* Input Toolbar (Pinned at bottom) */
         .input-toolbar {
             padding: 16px 20px;
             border-top: 1px solid var(--border-subtle);
@@ -276,6 +285,7 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            flex-shrink: 0;
         }
 
         .upload-strip {
@@ -318,6 +328,7 @@
         .media-viewer {
             padding: 0 20px 16px 20px;
             display: none;
+            flex-shrink: 0;
         }
 
         video, img {
@@ -331,7 +342,7 @@
 </head>
 <body>
     <div class="workspace">
-        <!-- Sidebar Controls -->
+        <!-- Sidebar Controls (Fixed) -->
         <div class="sidebar">
             <div class="brand-block">
                 <h1 class="brand-title">KIEMAEN <span>EXECUTIVE</span></h1>
@@ -353,7 +364,7 @@
             </div>
         </div>
 
-        <!-- Main Workspace -->
+        <!-- Main Workspace (Independent Scrolling Terminal) -->
         <div class="main-panel">
             <div class="panel-header">
                 <div class="panel-title">// WORKSPACE_TERMINAL_STREAM</div>
@@ -637,6 +648,8 @@
             msgDiv.appendChild(sender);
             msgDiv.appendChild(bubble);
             term.appendChild(msgDiv);
+            
+            // Instantly jump view directly to the new answer
             term.scrollTop = term.scrollHeight;
         }
 
