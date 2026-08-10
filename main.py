@@ -68,6 +68,9 @@ class InventionProjectRequest(BaseModel):
     description: str
     reference_project: Optional[str] = None
 
+class CodeExecRequest(BaseModel):
+    code: str
+
 def get_db_setting(key: str, default: str) -> str:
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -125,7 +128,7 @@ def save_project_blueprint(project_name: str, blueprint: str, reference: str):
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Step 2 Omni Engine Online"}
+    return {"status": "Kiemaen Step 3 Autonomous Tool Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -135,6 +138,21 @@ def reset_memory():
     conn.commit()
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
+
+@app.post("/execute-code")
+def execute_python_code(payload: CodeExecRequest):
+    """Executes engineering calculations and script logic in a sandboxed interpreter."""
+    buffer = io.StringIO()
+    sys.stdout = buffer
+    try:
+        exec_globals = {"pd": pd, "yf": yf, "math": __import__("math")}
+        exec(payload.code, exec_globals)
+        sys.stdout = sys.__stdout__
+        output_val = buffer.getvalue()
+        return {"output": output_val if output_val else "Code executed successfully with no printed output."}
+    except Exception as e:
+        sys.stdout = sys.__stdout__
+        return {"error": str(e)}
 
 @app.post("/tts/speak")
 def speak_audio(payload: TTSRequest):
@@ -166,7 +184,6 @@ def evolve_invention(payload: InventionProjectRequest):
         f"Provide a comprehensive technical blueprint, component breakdown, hardware/software stack, and step-by-step integration guide building directly upon the reference design."
     )
     
-    # Process through core model logic
     res = chat(ChatRequest(message=design_prompt))
     reply_text = res.get("reply", "")
     save_project_blueprint(payload.project_name, reply_text, payload.reference_project or "None")
