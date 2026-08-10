@@ -79,7 +79,7 @@ def get_db_setting(key: str, default: str) -> str:
         row = cursor.fetchone()
         conn.close()
         return row[0] if row else default
-    except:
+    except Exception as e:
         return default
 
 def save_chat_memory(role: str, content: str):
@@ -100,7 +100,7 @@ def fetch_recent_history(limit: int = 8) -> List[Dict[str, str]]:
         rows = cursor.fetchall()
         conn.close()
         return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
-    except:
+    except Exception as e:
         return []
 
 def get_project_blueprint(project_name: str) -> Optional[str]:
@@ -111,7 +111,7 @@ def get_project_blueprint(project_name: str) -> Optional[str]:
         row = cursor.fetchone()
         conn.close()
         return row[0] if row else None
-    except:
+    except Exception as e:
         return None
 
 def save_project_blueprint(project_name: str, blueprint: str, reference: str):
@@ -294,7 +294,7 @@ async def analyze_chart(file: UploadFile = File(...)):
             return {"analysis": analysis}
         return {"analysis": f"Vision API Error: {res_data}"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
 def chat(payload: ChatRequest):
