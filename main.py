@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import os, requests, urllib.parse, base64, sqlite3, json, io
+import os, requests, urllib.parse, base64, sqlite3, json, io, sys
 import pandas as pd
 import yfinance as yf
 from gtts import gTTS
@@ -40,6 +40,7 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS project_state (key TEXT PRIMARY KEY, data TEXT)")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_lot', '0.10')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('risk_reward', '1:2')")
     conn.commit()
@@ -66,10 +67,8 @@ class VideoModifyRequest(BaseModel):
     prompt: str
     image_url: Optional[str] = None
 
-class InventionProjectRequest(BaseModel):
-    project_name: str
-    description: str
-    reference_project: Optional[str] = None
+class CodeExecRequest(BaseModel):
+    code: str
 
 def get_db_setting(key: str, default: str) -> str:
     try:
@@ -92,7 +91,7 @@ def save_chat_memory(role: str, content: str):
     except Exception as e:
         print(f"DB Log Error: {e}")
 
-def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
+def fetch_recent_history(limit: int = 8) -> List[Dict[str, str]]:
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -107,7 +106,7 @@ def fetch_recent_history(limit: int = 6) -> List[Dict[str, str]]:
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Omni-Core Online"}
+    return {"status": "Kiemaen Omni Autonomous Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -118,12 +117,26 @@ def reset_memory():
     conn.close()
     return {"status": "SUCCESS", "message": "Conversation memory reset."}
 
+@app.post("/execute-code")
+def execute_python_code(payload: CodeExecRequest):
+    """Executes engineering calculations safely in an isolated Python interpreter context."""
+    buffer = io.StringIO()
+    sys.stdout = buffer
+    try:
+        exec_globals = {"pd": pd, "yf": yf}
+        exec(payload.code, exec_globals)
+        sys.stdout = sys.__stdout__
+        return {"output": buffer.getvalue()}
+    except Exception as e:
+        sys.stdout = sys.__stdout__
+        return {"error": str(e)}
+
 @app.post("/tts/speak")
 def speak_audio(payload: TTSRequest):
     try:
         clean_text = payload.text.replace("\n", ". ")
         if len(clean_text) > 800:
-            clean_text = clean_text[:800] + "... output continued on screen."
+            clean_text = clean_text[:800] + "... complete output displayed on screen."
 
         tts = gTTS(text=clean_text, lang='en', slow=False)
         fp = io.BytesIO()
@@ -132,57 +145,6 @@ def speak_audio(payload: TTSRequest):
         return StreamingResponse(fp, media_type="audio/mpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/trade/execute")
-def execute_trade(trade: TradeExecutionRequest):
-    order_payload = {
-        "symbol": trade.symbol,
-        "action": trade.action.upper(),
-        "lot_size": trade.lot_size,
-        "stop_loss": trade.stop_loss,
-        "take_profit": trade.take_profit,
-        "status": "PENDING"
-    }
-    PENDING_TRADES.append(order_payload)
-    return {"status": "ORDER_QUEUED", "details": order_payload}
-
-@app.get("/trade/pending")
-def get_pending_trades():
-    global PENDING_TRADES
-    orders = PENDING_TRADES.copy()
-    PENDING_TRADES.clear()
-    return {"orders": orders}
-
-@app.post("/generate-video")
-def generate_video(payload: VideoModifyRequest):
-    prompt = payload.prompt
-    image_url = payload.image_url
-
-    if not REPLICATE_API_TOKEN:
-        raise HTTPException(status_code=400, detail="REPLICATE_API_TOKEN missing on server environment.")
-
-    try:
-        import replicate
-        os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
-        input_data = {"prompt": prompt, "prompt_optimizer": True}
-        if image_url:
-            input_data["first_frame_image"] = image_url
-
-        output = replicate.run("minimax/video-01", input=input_data)
-        video_url = output.url if hasattr(output, "url") else str(output)
-        return {"prompt": prompt, "video_url": video_url}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Replicate Error: {str(e)}")
-
-@app.post("/invention/evolve")
-def evolve_invention(payload: InventionProjectRequest):
-    design_prompt = (
-        f"You are Kiemaen's Advanced R&D and Invention Engine. "
-        f"New Project: {payload.project_name}. Description: {payload.description}. "
-        f"Reference Old Project/Mechanism: {payload.reference_project or 'None'}. "
-        f"Provide a comprehensive technical blueprint, component list, and integration guide building upon the old design."
-    )
-    return chat(ChatRequest(message=design_prompt))
 
 @app.get("/market/analytics/multi")
 def get_multi_timeframe_analytics(asset: str = "gold"):
@@ -253,7 +215,7 @@ async def analyze_chart(file: UploadFile = File(...)):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this trading chart image. Identify key support, resistance, technical pattern, and clear trade recommendations."},
+                    {"type": "text", "text": "Analyze this technical trading chart or civil engineering mechanics diagram in detail."},
                     {"type": "image_url", "image_url": {"url": data_url}}
                 ]
             }
@@ -265,7 +227,7 @@ async def analyze_chart(file: UploadFile = File(...)):
         res_data = res.json()
         if "choices" in res_data:
             analysis = res_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Chart Image]")
+            save_chat_memory("user", "[Uploaded Image / Diagram]")
             save_chat_memory("assistant", analysis)
             return {"analysis": analysis}
         return {"analysis": f"Vision API Error: {res_data}"}
@@ -280,15 +242,21 @@ def chat(payload: ChatRequest):
     user_query = payload.message.lower()
     save_chat_memory("user", payload.message)
 
-    if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video", "short story", "storyboard"]):
-        vid_res = generate_video(VideoModifyRequest(prompt=payload.message))
-        url = vid_res.get("video_url")
-        reply = f"Generated cinematic video stream for your prompt:\n{url}"
-        save_chat_memory("assistant", reply)
-        return {"reply": reply}
+    if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video", "short story"]):
+        if REPLICATE_API_TOKEN:
+            try:
+                import replicate
+                os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
+                output = replicate.run("minimax/video-01", input={"prompt": payload.message, "prompt_optimizer": True})
+                url = output.url if hasattr(output, "url") else str(output)
+                reply = f"Generated cinematic video stream for your prompt:\n{url}"
+                save_chat_memory("assistant", reply)
+                return {"reply": reply}
+            except Exception as e:
+                print(f"Replicate Exception: {e}")
 
     if any(k in user_query for k in ["image", "picture", "photo", "draw", "visualize", "render"]):
-        photo_prompt = f"A professional 8k photograph of {payload.message}, shot on 35mm lens, realistic textures, studio lighting, photorealistic"
+        photo_prompt = f"A professional 8k rendering of {payload.message}, photorealistic, studio lighting, highly detailed"
         encoded = urllib.parse.quote(photo_prompt)
         img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
         reply = f"Photorealistic rendering created:\n{img_url}"
@@ -296,7 +264,7 @@ def chat(payload: ChatRequest):
         return {"reply": reply}
 
     analytics_context = ""
-    market_keywords = ["gold", "xau", "btc", "bitcoin", "eurusd", "us30", "dow", "market", "analysis", "setup", "set up", "trade", "buy", "sell"]
+    market_keywords = ["gold", "xau", "btc", "bitcoin", "eurusd", "us30", "dow", "market", "analysis", "trade", "buy", "sell"]
     
     if any(k in user_query for k in market_keywords):
         target_asset = "gold"
@@ -311,36 +279,28 @@ def chat(payload: ChatRequest):
         if "recommended_trade" in data:
             rec = data["recommended_trade"]
             analytics_context = (
-                f"\n[MULTI-TIMEFRAME ANALYSIS - {data['asset']}]\n"
+                f"\n[LIVE MARKET DATA - {data['asset']}]\n"
                 f"Overall Bias: {data['overall_bias']}\n"
-                f"Timeframe Breakdown: {json.dumps(data['timeframe_breakdown'])}\n"
-                f"Recommended Setup ({rec['lot_size']} Lot):\n"
-                f"• Action: {rec['action']} @ ${rec['entry']}\n"
-                f"• SL: ${rec['stop_loss']} | TP: ${rec['take_profit']}\n"
+                f"Timeframe breakdown: {json.dumps(data['timeframe_breakdown'])}\n"
+                f"Trade Strategy ({rec['lot_size']} Lot):\n"
+                f"• Setup: {rec['action']} @ ${rec['entry']}\n"
+                f"• Stop Loss: ${rec['stop_loss']} | Take Profit: ${rec['take_profit']}\n"
             )
 
-            if "execute" in user_query or "place trade" in user_query:
-                execute_trade(TradeExecutionRequest(
-                    symbol=rec["symbol"], action=rec["action"],
-                    lot_size=rec["lot_size"], stop_loss=rec["stop_loss"], take_profit=rec["take_profit"]
-                ))
-                analytics_context += "\n[ACTION: ORDER DISPATCHED TO MT5 QUEUE]"
-
     lot_pref = get_db_setting("default_lot", "0.10")
-    rr_pref = get_db_setting("risk_reward", "1:2")
     
     system_prompt = (
         f"You are Kiemaen, an elite general-purpose autonomous AI assistant designed for Jacob Peter Sithole. "
-        f"Your domains: "
-        f"1. Civil Engineering (University of Johannesburg modules, strength of materials, axial loading, structural mechanics). "
-        f"2. Quantitative Trading (Gold XAUUSD, BTC, risk management, lot size: {lot_pref}, risk-to-reward: {rr_pref}). "
-        f"3. Content Creation (Generating scripts, animated short storyboards, prompts for video/image generation). "
-        f"4. Invention & R&D (Designing new technical projects using old inventions as foundational reference points). "
-        f"Be sharp, highly technical, direct, and conversational."
+        f"Your active core domains: "
+        f"1. Civil Engineering: University of Johannesburg modules, strength of materials, axial loading, normal stress, shear stress, strain calculations, and structural design. "
+        f"2. Quantitative Trading: Gold XAUUSD, BTC, risk management, multi-timeframe RSI/EMA setups, lot size: {lot_pref}. "
+        f"3. Content Creation: Scriptwriting, short animated storyboards, dynamic video/image prompts. "
+        f"4. Invention R&D: Blueprinting new hardware and software tools using prior builds as foundational references. "
+        f"Be direct, precise, mathematically sound, and articulate."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
-    for item in fetch_recent_history(limit=6):
+    for item in fetch_recent_history(limit=8):
         messages.append({"role": item["role"], "content": item["content"]})
 
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
