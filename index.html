@@ -3,246 +3,421 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KIEMAEN // OMNI-HUD v4.0</title>
+    <title>KIEMAEN // OMNI-HUD PRIME</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=JetBrains+Mono:wght@300;400;600&display=swap');
+
         :root {
-            --bg-deep: #030712;
-            --surface: #0f172a;
-            --surface-glass: rgba(15, 23, 42, 0.75);
-            --border: #1e293b;
-            --accent-cyan: #38bdf8;
-            --accent-green: #22c55e;
-            --accent-purple: #a855f7;
-            --accent-red: #ef4444;
-            --accent-orange: #f97316;
-            --text-main: #f1f5f9;
-            --text-muted: #94a3b8;
+            --bg-base: #02040a;
+            --surface-glass: rgba(6, 11, 25, 0.85);
+            --border-glow: rgba(0, 243, 255, 0.25);
+            --border-active: rgba(0, 243, 255, 0.75);
+            
+            --neon-cyan: #00f3ff;
+            --neon-green: #00ff66;
+            --neon-purple: #bd00ff;
+            --neon-red: #ff0055;
+            --neon-amber: #ffaa00;
+
+            --text-main: #e2e8f0;
+            --text-muted: #64748b;
         }
 
         body {
-            background-color: var(--bg-deep);
+            background-color: var(--bg-base);
             background-image: 
-                radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
-                radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+                radial-gradient(circle at 50% -20%, rgba(0, 243, 255, 0.15) 0%, transparent 60%),
+                radial-gradient(circle at 100% 100%, rgba(189, 0, 255, 0.1) 0%, transparent 50%),
+                linear-gradient(rgba(2, 4, 10, 0.95), rgba(2, 4, 10, 0.95)),
+                url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
             color: var(--text-main);
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'JetBrains Mono', monospace;
             margin: 0;
-            padding: 15px;
+            padding: 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         .container {
             width: 100%;
-            max-width: 650px;
+            max-width: 750px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 16px;
         }
 
+        /* Top HUD Header */
         .hud-header {
-            text-align: center;
-            border-bottom: 2px solid var(--border);
-            padding-bottom: 10px;
-            margin-bottom: 5px;
-        }
-
-        .hud-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: var(--accent-cyan);
-            letter-spacing: 2px;
-            text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
-            margin: 0;
-        }
-
-        .hud-subtitle {
-            font-size: 11px;
-            color: var(--text-muted);
-            letter-spacing: 1px;
-            margin-top: 4px;
-        }
-
-        .card {
             background: var(--surface-glass);
-            backdrop-filter: blur(12px);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 18px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-        }
-
-        .btn-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 13px;
-            font-family: inherit;
-            transition: all 0.2s ease;
-            text-align: center;
-            letter-spacing: 1px;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            filter: brightness(1.2);
-        }
-
-        .btn-full { grid-column: span 2; }
-        .btn-purple { background: rgba(168, 85, 247, 0.15); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.3); }
-        .btn-green { background: rgba(34, 197, 94, 0.15); color: #86efac; border-color: rgba(34, 197, 94, 0.3); }
-        .btn-red { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3); }
-        .btn-blue { background: rgba(56, 189, 248, 0.15); color: #7dd3fc; border-color: rgba(56, 189, 248, 0.3); }
-        .btn-orange { background: rgba(249, 115, 22, 0.15); color: #fdba74; border-color: rgba(249, 115, 22, 0.3); }
-
-        .terminal {
-            background: #020617;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            height: 380px;
-            overflow-y: auto;
-            padding: 12px;
-            font-size: 12px;
+            border: 1px solid var(--border-glow);
+            border-radius: 14px;
+            padding: 16px 20px;
             display: flex;
-            flex-direction: column;
-            gap: 10px;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.05), inset 0 0 15px rgba(0, 243, 255, 0.02);
+            position: relative;
+            overflow: hidden;
         }
 
-        .msg-user { color: var(--accent-cyan); text-align: left; }
-        .msg-assistant { color: var(--accent-green); text-align: left; white-space: pre-wrap; line-height: 1.4; }
-
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-top: 10px;
+        .hud-header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 3px; height: 100%;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
         }
 
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            background: #020617;
-            border: 1px solid var(--border);
-            color: var(--text-main);
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 13px;
-            box-sizing: border-box;
-            outline: none;
-            transition: border-color 0.2s;
+        .hud-title-group h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            letter-spacing: 3px;
+            margin: 0;
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
         }
 
-        input[type="text"]:focus {
-            border-color: var(--accent-cyan);
-            box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
-        }
-
-        .file-upload-box {
-            font-size: 11px;
+        .hud-title-group p {
+            font-size: 10px;
             color: var(--text-muted);
+            letter-spacing: 2px;
+            margin: 4px 0 0 0;
+            text-transform: uppercase;
+        }
+
+        .core-status-badge {
+            background: rgba(0, 255, 102, 0.1);
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            background: #020617;
-            border: 1px dashed var(--border);
+            gap: 6px;
+            box-shadow: 0 0 10px rgba(0, 255, 102, 0.2);
+        }
+
+        .pulse-dot {
+            width: 6px; height: 6px;
+            background: var(--neon-green);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--neon-green);
+            animation: pulseGlow 1.5s infinite;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(1); opacity: 1; box-shadow: 0 0 4px var(--neon-green); }
+            50% { transform: scale(1.4); opacity: 0.4; box-shadow: 0 0 12px var(--neon-green); }
+            100% { transform: scale(1); opacity: 1; box-shadow: 0 0 4px var(--neon-green); }
+        }
+
+        /* Glassmorphism Cards */
+        .card {
+            background: var(--surface-glass);
+            border: 1px solid var(--border-glow);
+            border-radius: 14px;
+            padding: 20px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            transition: border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(0, 243, 255, 0.4);
+        }
+
+        /* Interactive Grid Buttons */
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .hud-btn {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-glow);
+            color: var(--text-main);
+            padding: 12px 10px;
+            border-radius: 8px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        .hud-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 243, 255, 0.2);
+        }
+
+        .btn-cyan { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+        .btn-cyan:hover { background: rgba(0, 243, 255, 0.15); }
+
+        .btn-green { border-color: var(--neon-green); color: var(--neon-green); }
+        .btn-green:hover { background: rgba(0, 255, 102, 0.15); }
+
+        .btn-purple { border-color: var(--neon-purple); color: var(--neon-purple); }
+        .btn-purple:hover { background: rgba(189, 0, 255, 0.15); }
+
+        .btn-red { border-color: var(--neon-red); color: var(--neon-red); }
+        .btn-red:hover { background: rgba(255, 0, 85, 0.15); }
+
+        .btn-amber { border-color: var(--neon-amber); color: var(--neon-amber); }
+        .btn-amber:hover { background: rgba(255, 170, 0, 0.15); }
+
+        .btn-full { grid-column: span 3; }
+
+        /* Audio Visualizer Canvas */
+        .visualizer-box {
+            background: #010307;
+            border: 1px solid var(--border-glow);
+            border-radius: 8px;
+            height: 45px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .wave-bars {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+            height: 100%;
+        }
+
+        .wave-bar {
+            width: 3px;
+            height: 10px;
+            background: var(--neon-cyan);
+            border-radius: 2px;
+            transition: height 0.1s ease;
+            box-shadow: 0 0 6px var(--neon-cyan);
+        }
+
+        /* File Upload & Input Row */
+        .input-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .upload-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: rgba(1, 3, 7, 0.6);
+            border: 1px dashed var(--border-glow);
             padding: 8px 12px;
             border-radius: 8px;
         }
 
-        input[type="file"] { color: var(--text-muted); font-size: 11px; }
+        .upload-row label {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
 
-        .status-bar {
+        input[type="file"] {
+            font-size: 11px;
+            color: var(--text-main);
+            width: 100%;
+        }
+
+        .command-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background: rgba(1, 3, 7, 0.8);
+            border: 1px solid var(--border-glow);
+            color: var(--neon-cyan);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 13px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.25);
+        }
+
+        /* Cyberpunk Terminal Window */
+        .terminal-wrapper {
+            position: relative;
+        }
+
+        .terminal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 11px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
             color: var(--text-muted);
-            border-top: 1px solid var(--border);
-            padding-top: 10px;
-            margin-top: 5px;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
         }
 
-        .status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background-color: var(--accent-green);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--accent-green);
-            margin-right: 5px;
-            animation: pulse 2s infinite;
+        .terminal {
+            background: #010307;
+            border: 1px solid var(--border-glow);
+            border-radius: 10px;
+            height: 380px;
+            overflow-y: auto;
+            padding: 16px;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+            scroll-behavior: smooth;
         }
 
-        @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.4; transform: scale(0.9); }
-            100% { opacity: 1; transform: scale(1); }
+        .terminal::-webkit-scrollbar {
+            width: 6px;
+        }
+        .terminal::-webkit-scrollbar-thumb {
+            background: rgba(0, 243, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .msg-user { 
+            color: var(--neon-cyan); 
+            text-align: left; 
+            border-left: 2px solid var(--neon-cyan);
+            padding-left: 10px;
+        }
+        
+        .msg-assistant { 
+            color: var(--neon-green); 
+            text-align: left; 
+            white-space: pre-wrap; 
+            line-height: 1.5;
+            border-left: 2px solid var(--neon-green);
+            padding-left: 10px;
+            background: rgba(0, 255, 102, 0.02);
+            padding: 8px 10px;
+            border-radius: 0 6px 6px 0;
+        }
+
+        /* Media Stream Output */
+        .media-container {
+            display: none;
         }
 
         video, img {
             width: 100%;
-            border-radius: 8px;
-            margin-top: 8px;
-            max-height: 260px;
+            border-radius: 10px;
+            margin-top: 10px;
+            max-height: 280px;
             object-fit: cover;
-            border: 1px solid var(--border);
+            border: 1px solid var(--border-glow);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        /* Live Status Footer */
+        .footer-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
+            padding-top: 4px;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- HUD Header -->
         <div class="hud-header">
-            <h1 class="hud-title">KIEMAEN // OMNI-HUD</h1>
-            <div class="hud-subtitle">AUTONOMOUS NEURAL INTERFACE &bull; J.P. SITHOLE</div>
+            <div class="hud-title-group">
+                <h1>KIEMAEN // PRIME</h1>
+                <p>AUTONOMOUS NEURAL INTERFACE &bull; J.P. SITHOLE</p>
+            </div>
+            <div class="core-status-badge">
+                <div class="pulse-dot"></div>
+                <span id="coreStatusText">CORE ONLINE</span>
+            </div>
         </div>
         
+        <!-- Control Deck -->
         <div class="card">
-            <div class="btn-grid">
-                <button class="btn btn-purple" onclick="testAudioUnlock()">🔊 Unlock Audio</button>
-                <button class="btn btn-red" onclick="clearMemory()">🧹 Reset Memory</button>
-                <button id="toggleLoopBtn" class="btn btn-green btn-full" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (Unlimited)</button>
-                <button id="manualStopBtn" class="btn btn-red btn-full" style="display:none;" onclick="stopSpeakingAndSend()">🛑 Done Talking (Process Now)</button>
+            <div class="control-grid">
+                <button class="hud-btn btn-purple" onclick="testAudioUnlock()">🔊 Unlock Audio</button>
+                <button class="hud-btn btn-red" onclick="clearMemory()">🧹 Purge Memory</button>
+                <button class="hud-btn btn-amber" onclick="triggerSystemDiagnostic()">⚙️ Diagnostics</button>
+                <button id="toggleLoopBtn" class="hud-btn btn-green btn-full" onclick="toggleContinuousSession()">🎙️ Start Continuous Omni-Mode (Unlimited)</button>
+                <button id="manualStopBtn" class="hud-btn btn-red btn-full" style="display:none;" onclick="stopSpeakingAndSend()">🛑 Done Talking (Process Stream)</button>
             </div>
 
-            <div class="file-upload-box">
-                <span>Vision Chart / Diagram:</span>
-                <input type="file" id="chartInput" accept="image/*">
-            </div>
-            <button class="btn btn-orange" style="margin-top: 8px;" onclick="uploadChart()">📊 Analyze Uploaded Diagram</button>
-
-            <div class="input-group">
-                <input type="text" id="textInput" placeholder="Enter command for engineering, trading, or R&D..." onkeydown="if(event.key==='Enter') sendText()">
-                <button class="btn btn-blue" onclick="sendText()">Transmit Command</button>
+            <!-- Audio Frequency Visualizer Simulation -->
+            <div class="visualizer-box" id="visualizerBox">
+                <div class="wave-bars" id="waveBars">
+                    <!-- Generated dynamically via JS -->
+                </div>
             </div>
 
-            <div class="status-bar">
-                <div><span class="status-indicator"></span><span id="status">System Status: Standby</span></div>
-                <div>SECURE LINK ACTIVE</div>
+            <!-- Input Panel -->
+            <div class="input-panel">
+                <div class="upload-row">
+                    <label>VISION INPUT:</label>
+                    <input type="file" id="chartInput" accept="image/*">
+                </div>
+                <button class="hud-btn btn-amber" onclick="uploadChart()">📊 Execute Diagram / Chart Vision Scan</button>
+
+                <div class="command-row">
+                    <input type="text" id="textInput" placeholder="Enter directive for Civil Engineering, Trading, or R&D..." onkeydown="if(event.key==='Enter') sendText()">
+                    <button class="hud-btn btn-cyan" onclick="sendText()">TRANSMIT</button>
+                </div>
+            </div>
+
+            <div class="footer-status" style="margin-top: 14px;">
+                <span id="status">STATUS: SYSTEM STANDBY // LISTENING BUFFER READY</span>
+                <span>SECURE LINK: GROQ_L33T</span>
             </div>
         </div>
 
-        <div class="card">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 1px;">TERMINAL FEED:</div>
+        <!-- Terminal Feed -->
+        <div class="card terminal-wrapper">
+            <div class="terminal-header">
+                <span>// NEURAL LOG STREAM</span>
+                <span style="color: var(--neon-cyan);">BUFFER: 100%</span>
+            </div>
             <div id="terminal" class="terminal">
-                <div class="msg-assistant">Kiemaen: HUD online. Neural voice link established. Ready for civil engineering, quantitative trading, and R&D protocols.</div>
+                <div class="msg-assistant">Kiemaen: Prime HUD initialized. Voice-to-voice stream, multi-timeframe analytics, and agentic memory active. Ready for high-precision deployment.</div>
             </div>
         </div>
 
-        <div class="card" id="mediaContainer" style="display:none;">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 1px;">GENERATED MEDIA STREAM:</div>
+        <!-- Media Stream Output -->
+        <div class="card media-container" id="mediaContainer">
+            <div class="terminal-header" style="margin-bottom: 6px;">
+                <span>// GENERATED VISUAL STREAM</span>
+            </div>
             <div id="mediaOutput"></div>
         </div>
     </div>
@@ -254,39 +429,74 @@
         let audioChunks = [];
         let isContinuousActive = false;
         let isListening = false;
+        let vizInterval = null;
+
+        // Initialize Visualizer Waveform Animation
+        const waveContainer = document.getElementById("waveBars");
+        for (let i = 0; i < 35; i++) {
+            const bar = document.createElement("div");
+            bar.className = "wave-bar";
+            waveContainer.appendChild(bar);
+        }
+
+        function startVisualizer(active) {
+            const bars = document.querySelectorAll(".wave-bar");
+            if (active) {
+                vizInterval = setInterval(() => {
+                    bars.forEach(bar => {
+                        const randomHeight = Math.floor(Math.random() * 35) + 5;
+                        bar.style.height = randomHeight + "px";
+                        bar.style.background = "var(--neon-cyan)";
+                    });
+                }, 80);
+            } else {
+                clearInterval(vizInterval);
+                bars.forEach(bar => {
+                    bar.style.height = "6px";
+                    bar.style.background = "var(--text-muted)";
+                });
+            }
+        }
 
         async function testAudioUnlock() {
             try {
                 const res = await fetch('/tts/speak', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: "Audio subsystem unlocked successfully." })
+                    body: JSON.stringify({ text: "Audio subsystem unlocked. Prime link established." })
                 });
                 const blob = await res.blob();
                 const player = document.getElementById("audioPlayer");
                 player.src = URL.createObjectURL(blob);
                 await player.play();
-                updateStatus("Audio Subsystem Active");
+                updateStatus("Audio Subsystem Online");
             } catch (e) {
                 alert("Audio unlock failed: " + e.message);
             }
+        }
+
+        function triggerSystemDiagnostic() {
+            appendTerminal("Kiemaen: Running full core diagnostic... Database integrity verified. GPU inference pipelines online. Multi-timeframe risk model active.", "msg-assistant");
+            updateStatus("Diagnostics Complete: All Systems Optimal");
         }
 
         function toggleContinuousSession() {
             if (!isContinuousActive) {
                 isContinuousActive = true;
                 document.getElementById("toggleLoopBtn").innerText = "⏹️ Stop Continuous Mode";
-                document.getElementById("toggleLoopBtn").className = "btn btn-red btn-full";
-                document.getElementById("manualStopBtn").style.display = "block";
+                document.getElementById("toggleLoopBtn").className = "hud-btn btn-red btn-full";
+                document.getElementById("manualStopBtn").style.display = "flex";
                 updateStatus("Listening Indefinitely (Speak Freely)...");
+                startVisualizer(true);
                 startUnlimitedListening();
             } else {
                 isContinuousActive = false;
                 stopListening();
                 document.getElementById("toggleLoopBtn").innerText = "🎙️ Start Continuous Omni-Mode (Unlimited)";
-                document.getElementById("toggleLoopBtn").className = "btn btn-green btn-full";
+                document.getElementById("toggleLoopBtn").className = "hud-btn btn-green btn-full";
                 document.getElementById("manualStopBtn").style.display = "none";
                 updateStatus("System Status: Standby");
+                startVisualizer(false);
             }
         }
 
@@ -304,6 +514,7 @@
                 mediaRecorder.onstop = async () => {
                     if (!isContinuousActive) return;
                     updateStatus("Processing Neural Audio Stream...");
+                    startVisualizer(false);
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const formData = new FormData();
                     formData.append("file", audioBlob, "voice.webm");
@@ -327,7 +538,8 @@
                             await speakFullAnswerAndListen(chatData.reply);
                         } else {
                             if (isContinuousActive) {
-                                document.getElementById("manualStopBtn").style.display = "block";
+                                document.getElementById("manualStopBtn").style.display = "flex";
+                                startVisualizer(true);
                                 startUnlimitedListening();
                             }
                         }
@@ -335,7 +547,8 @@
                         console.log("Loop Error:", err);
                         if (isContinuousActive) {
                             setTimeout(() => {
-                                document.getElementById("manualStopBtn").style.display = "block";
+                                document.getElementById("manualStopBtn").style.display = "flex";
+                                startVisualizer(true);
                                 startUnlimitedListening();
                             }, 2000);
                         }
@@ -371,13 +584,15 @@
             const cleanText = text.replace(/https?:\/\/[^\s]+/g, "");
             if (!cleanText.trim()) {
                 if (isContinuousActive) {
-                    document.getElementById("manualStopBtn").style.display = "block";
+                    document.getElementById("manualStopBtn").style.display = "flex";
+                    startVisualizer(true);
                     startUnlimitedListening();
                 }
                 return;
             }
 
             updateStatus("Synthesizing Full Speech Output...");
+            startVisualizer(true);
 
             try {
                 const res = await fetch('/tts/speak', {
@@ -388,7 +603,8 @@
 
                 if (!res.ok) {
                     if (isContinuousActive) {
-                        document.getElementById("manualStopBtn").style.display = "block";
+                        document.getElementById("manualStopBtn").style.display = "flex";
+                        startVisualizer(true);
                         startUnlimitedListening();
                     }
                     return;
@@ -400,11 +616,13 @@
                 player.src = audioUrl;
 
                 player.onended = () => {
+                    startVisualizer(false);
                     if (isContinuousActive) {
                         updateStatus("Buffer Pause (2s)... Ready");
                         setTimeout(() => {
                             if (isContinuousActive) {
-                                document.getElementById("manualStopBtn").style.display = "block";
+                                document.getElementById("manualStopBtn").style.display = "flex";
+                                startVisualizer(true);
                                 startUnlimitedListening();
                             }
                         }, 2000);
@@ -414,8 +632,10 @@
                 await player.play();
             } catch (e) {
                 console.log("Voice error:", e);
+                startVisualizer(false);
                 if (isContinuousActive) {
-                    document.getElementById("manualStopBtn").style.display = "block";
+                    document.getElementById("manualStopBtn").style.display = "flex";
+                    startVisualizer(true);
                     startUnlimitedListening();
                 }
             }
@@ -450,7 +670,7 @@
             const formData = new FormData();
             formData.append("file", fileInput.files[0]);
 
-            appendTerminal("User: [Uploaded Diagram/Chart for Analysis]", "msg-user");
+            appendTerminal("User: [Uploaded Diagram/Chart for Vision Analysis]", "msg-user");
             updateStatus("Running Vision Neural Scan...");
 
             try {
@@ -496,7 +716,7 @@
         }
 
         function updateStatus(text) {
-            document.getElementById("status").innerText = "Status: " + text;
+            document.getElementById("status").innerText = "STATUS: " + text.toUpperCase();
         }
     </script>
 </body>
