@@ -128,7 +128,7 @@ def save_project_blueprint(project_name: str, blueprint: str, reference: str):
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Macro-Engine Online"}
+    return {"status": "Kiemaen Engineering & Macro Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -277,7 +277,7 @@ async def analyze_chart(file: UploadFile = File(...)):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this technical trading chart or civil engineering mechanics diagram in detail. Provide exact metrics, fundamental context, support/resistance levels, or formula breakdowns."},
+                    {"type": "text", "text": "Analyze this structural engineering diagram or technical drawing. Identify code compliance, stress concentrations, failure points, and error margins."},
                     {"type": "image_url", "image_url": {"url": data_url}}
                 ]
             }
@@ -289,12 +289,12 @@ async def analyze_chart(file: UploadFile = File(...)):
         res_data = res.json()
         if "choices" in res_data:
             analysis = res_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Diagram/Chart]")
+            save_chat_memory("user", "[Uploaded Engineering Diagram]")
             save_chat_memory("assistant", analysis)
             return {"analysis": analysis}
         return {"analysis": f"Vision API Error: {res_data}"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)}
 
 @app.post("/chat")
 def chat(payload: ChatRequest):
@@ -340,16 +340,12 @@ def chat(payload: ChatRequest):
         data = get_multi_timeframe_analytics(asset=target_asset)
         if "recommended_trade" in data:
             rec = data["recommended_trade"]
-            
-            # Context注入: Inject live macro fundamental awareness (August 2026 economic environment)
             macro_fundamental_context = (
                 f"\n[CURRENT MACRO & FUNDAMENTAL CONTEXT - AUGUST 2026]:\n"
-                f"- Market Driver: Gold (XAUUSD) is holding firm above $4,300 following recent softer U.S. non-farm payroll (NFP) and labor data, cooling aggressive rate-hike expectations.\n"
-                f"- Upcoming Events This Week: Key U.S. CPI (Consumer Price Index) and PPI releases are scheduled, which will dictate short-term Fed rate probability (currently pricing ~54% chance rates hold steady at 3.50%-3.75%).\n"
-                f"- Structural Support: Heavy institutional central bank net purchases (e.g., PBOC, regional reserve diversification) continue to provide a solid price floor despite ETF outflows.\n"
-                f"- Dollar Index (DXY): Hovering near multi-month lows below 99.6, boosting dollar-denominated bullion assets.\n"
+                f"- Market Driver: Gold (XAUUSD) is holding firm above $4,300 following recent softer U.S. labor data, cooling rate hikes.\n"
+                f"- Upcoming Events: U.S. CPI and PPI data releases dictate short-term Fed rate probabilities.\n"
+                f"- Institutional Flow: Central bank reserve accumulation continues to act as a solid floor.\n"
             )
-
             analytics_context = (
                 macro_fundamental_context +
                 f"\n[LIVE QUANTITATIVE DATA - {data['asset']}]\n"
@@ -370,12 +366,14 @@ def chat(payload: ChatRequest):
     lot_pref = get_db_setting("default_lot", "0.10")
     
     system_prompt = (
-        f"You are Kiemaen, an elite general-purpose autonomous AI assistant designed for Jacob Peter Sithole. "
-        f"MANDATORY TRADING PROTOCOL: Whenever the user requests market analysis, price movement explanation, or trade setups, you MUST structure your response as follows:\n"
-        f"1. **Macroeconomic Fundamental Narrative:** Explain current market drivers, central bank flows, geopolitical safe-haven sentiment, and upcoming high-impact economic events (like CPI, PPI, NFP, or Fed decisions).\n"
-        f"2. **Multi-Timeframe Technical Breakdown:** Analyze RSI, EMA trends, support/resistance levels, and price action across 15m, 1h, and 1d intervals.\n"
-        f"3. **Execution Setup & Risk Parameters:** Clearly state the recommended Action (BUY/SELL), Entry price, Stop Loss, Take Profit, and risk-to-reward ratio using a default lot size of {lot_pref}.\n"
-        f"Be articulate, rigorous, and professional."
+        f"You are Kiemaen, an elite general-purpose autonomous AI assistant designed for Jacob Peter Sithole (Civil Engineering student at UJ). "
+        f"MANDATORY DUAL-PROTOCOL:\n"
+        f"1. **Trading Directive:** When analyzing markets, always explain current macroeconomic fundamental drivers, central bank flows, technical multi-timeframe breakdowns, and provide risk-managed setup parameters.\n"
+        f"2. **Engineering & Project Directive:** When the user proposes a civil engineering project, structural design, or mechanics problem, you MUST:\n"
+        f"   - Fetch and interpret current public structural standards (such as EN 1991, EN 1993, ACI, or AASHTO codes).\n"
+        f"   - Apply these standards directly to their proposed design or problem.\n"
+        f"   - Explicitly calculate and detail **potential failure modes, fatigue limits, safety factor violations, and error margins** for their proposed structure.\n"
+        f"Be rigorous, precise, and professional."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
