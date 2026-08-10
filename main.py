@@ -27,7 +27,7 @@ GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 ASSET_MAP = {
-    "gold": "XAUUSD=X", "xau": "XAUUSD=X",
+    "gold": "GC=F", "xau": "GC=F",
     "btc": "BTC-USD", "bitcoin": "BTC-USD",
     "eurusd": "EURUSD=X", "forex": "EURUSD=X",
     "us30": "^DJI", "dow": "^DJI"
@@ -165,7 +165,6 @@ def generate_video(payload: VideoModifyRequest):
         if image_url:
             input_data["first_frame_image"] = image_url
 
-        # Runs Replicate MiniMax video-01 model
         output = replicate.run("minimax/video-01", input=input_data)
         video_url = output.url if hasattr(output, "url") else str(output)
         return {"prompt": prompt, "video_url": video_url}
@@ -186,7 +185,7 @@ def evolve_invention(payload: InventionProjectRequest):
 def get_multi_timeframe_analytics(asset: str = "gold"):
     try:
         symbol_key = asset.lower().replace("/", "").replace(" ", "")
-        ticker_symbol = ASSET_MAP.get(symbol_key, "XAUUSD=X")
+        ticker_symbol = ASSET_MAP.get(symbol_key, "GC=F")
         ticker = yf.Ticker(ticker_symbol)
 
         timeframes = {"15m": "5d", "1h": "1mo", "1d": "3mo"}
@@ -213,7 +212,7 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
 
         overall_bias = "STRONG BULLISH" if bullish_count > bearish_count else "STRONG BEARISH"
         lot_size = float(get_db_setting("default_lot", "0.10"))
-        latest_price = list(results.values())[0]["price"] if results else 0.0
+        latest_price = list(results.values())[0]["price"] if results else 4325.0
 
         sl = round(latest_price * 0.995, 2) if "BULLISH" in overall_bias else round(latest_price * 1.005, 2)
         tp = round(latest_price * 1.010, 2) if "BULLISH" in overall_bias else round(latest_price * 0.990, 2)
@@ -233,6 +232,42 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
         }
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/analyze-chart")
+async def analyze_chart(file: UploadFile = File(...)):
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
+
+    file_bytes = await file.read()
+    base64_image = base64.b64encode(file_bytes).decode("utf-8")
+    mime_type = file.content_type or "image/jpeg"
+    data_url = f"data:{mime_type};base64,{base64_image}"
+
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "qwen/qwen3.6-27b",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Analyze this trading chart image. Identify key support, resistance, technical pattern, and clear trade recommendations."},
+                    {"type": "image_url", "image_url": {"url": data_url}}
+                ]
+            }
+        ]
+    }
+
+    try:
+        res = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
+        res_data = res.json()
+        if "choices" in res_data:
+            analysis = res_data["choices"][0]["message"]["content"]
+            save_chat_memory("user", "[Uploaded Chart Image]")
+            save_chat_memory("assistant", analysis)
+            return {"analysis": analysis}
+        return {"analysis": f"Vision API Error: {res_data}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
 def chat(payload: ChatRequest):
