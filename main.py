@@ -121,7 +121,10 @@ def reset_memory():
 @app.post("/tts/speak")
 def speak_audio(payload: TTSRequest):
     try:
-        clean_text = payload.text.replace("\n", " ")[:300]
+        clean_text = payload.text.replace("\n", ". ")
+        if len(clean_text) > 800:
+            clean_text = clean_text[:800] + "... output continued on screen."
+
         tts = gTTS(text=clean_text, lang='en', slow=False)
         fp = io.BytesIO()
         tts.write_to_fp(fp)
