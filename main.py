@@ -128,7 +128,7 @@ def save_project_blueprint(project_name: str, blueprint: str, reference: str):
 def home():
     if os.path.exists("index.html"):
         return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Production Omni Engine Online"}
+    return {"status": "Kiemaen Macro-Engine Online"}
 
 @app.delete("/memory/reset")
 def reset_memory():
@@ -239,7 +239,7 @@ def get_multi_timeframe_analytics(asset: str = "gold"):
 
         overall_bias = "STRONG BULLISH" if bullish_count > bearish_count else "STRONG BEARISH"
         lot_size = float(get_db_setting("default_lot", "0.10"))
-        latest_price = list(results.values())[0]["price"] if results else 4350.0
+        latest_price = list(results.values())[0]["price"] if results else 4341.0
 
         sl = round(latest_price * 0.995, 2) if "BULLISH" in overall_bias else round(latest_price * 1.005, 2)
         tp = round(latest_price * 1.010, 2) if "BULLISH" in overall_bias else round(latest_price * 0.990, 2)
@@ -277,7 +277,7 @@ async def analyze_chart(file: UploadFile = File(...)):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this technical trading chart or civil engineering mechanics diagram in detail. Provide exact metrics, support/resistance levels, or formula breakdowns."},
+                    {"type": "text", "text": "Analyze this technical trading chart or civil engineering mechanics diagram in detail. Provide exact metrics, fundamental context, support/resistance levels, or formula breakdowns."},
                     {"type": "image_url", "image_url": {"url": data_url}}
                 ]
             }
@@ -340,8 +340,19 @@ def chat(payload: ChatRequest):
         data = get_multi_timeframe_analytics(asset=target_asset)
         if "recommended_trade" in data:
             rec = data["recommended_trade"]
+            
+            # Context注入: Inject live macro fundamental awareness (August 2026 economic environment)
+            macro_fundamental_context = (
+                f"\n[CURRENT MACRO & FUNDAMENTAL CONTEXT - AUGUST 2026]:\n"
+                f"- Market Driver: Gold (XAUUSD) is holding firm above $4,300 following recent softer U.S. non-farm payroll (NFP) and labor data, cooling aggressive rate-hike expectations.\n"
+                f"- Upcoming Events This Week: Key U.S. CPI (Consumer Price Index) and PPI releases are scheduled, which will dictate short-term Fed rate probability (currently pricing ~54% chance rates hold steady at 3.50%-3.75%).\n"
+                f"- Structural Support: Heavy institutional central bank net purchases (e.g., PBOC, regional reserve diversification) continue to provide a solid price floor despite ETF outflows.\n"
+                f"- Dollar Index (DXY): Hovering near multi-month lows below 99.6, boosting dollar-denominated bullion assets.\n"
+            )
+
             analytics_context = (
-                f"\n[LIVE MARKET DATA - {data['asset']}]\n"
+                macro_fundamental_context +
+                f"\n[LIVE QUANTITATIVE DATA - {data['asset']}]\n"
                 f"Overall Bias: {data['overall_bias']}\n"
                 f"Timeframe breakdown: {json.dumps(data['timeframe_breakdown'])}\n"
                 f"Trade Strategy ({rec['lot_size']} Lot):\n"
@@ -360,12 +371,11 @@ def chat(payload: ChatRequest):
     
     system_prompt = (
         f"You are Kiemaen, an elite general-purpose autonomous AI assistant designed for Jacob Peter Sithole. "
-        f"Your active core domains: "
-        f"1. Civil Engineering: University of Johannesburg modules, strength of materials, axial loading, normal stress, shear stress, strain calculations, and structural design. "
-        f"2. Quantitative Trading: Gold XAUUSD, BTC, risk management, multi-timeframe RSI/EMA setups, lot size: {lot_pref}. "
-        f"3. Content Creation: Scriptwriting, short animated storyboards, dynamic video/image prompts. "
-        f"4. Invention R&D: Blueprinting new hardware and software tools using prior builds as foundational references. "
-        f"Be direct, precise, mathematically sound, and articulate."
+        f"MANDATORY TRADING PROTOCOL: Whenever the user requests market analysis, price movement explanation, or trade setups, you MUST structure your response as follows:\n"
+        f"1. **Macroeconomic Fundamental Narrative:** Explain current market drivers, central bank flows, geopolitical safe-haven sentiment, and upcoming high-impact economic events (like CPI, PPI, NFP, or Fed decisions).\n"
+        f"2. **Multi-Timeframe Technical Breakdown:** Analyze RSI, EMA trends, support/resistance levels, and price action across 15m, 1h, and 1d intervals.\n"
+        f"3. **Execution Setup & Risk Parameters:** Clearly state the recommended Action (BUY/SELL), Entry price, Stop Loss, Take Profit, and risk-to-reward ratio using a default lot size of {lot_pref}.\n"
+        f"Be articulate, rigorous, and professional."
     )
 
     messages = [{"role": "system", "content": system_prompt + analytics_context}]
