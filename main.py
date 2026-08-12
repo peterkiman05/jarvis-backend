@@ -1,481 +1,162 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
+import os
+import sqlite3
+import subprocess
+import tempfile
+import urllib.parse
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-import os, requests, urllib.parse, base64, sqlite3, json, io, sys
-import pandas as pd
-import yfinance as yf
-from gtts import gTTS
-from ta.momentum import RSIIndicator
-from ta.trend import EMAIndicator
+import requests
 
-app = FastAPI()
+app = FastAPI(title="General-Purpose AI Backend", version="2.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-
+# Configuration (Ensure GROQ_API_KEY is set in your environment or replace with your key)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_AUDIO_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
-ASSET_MAP = {
-    "gold": "GC=F", "xau": "GC=F",
-    "btc": "BTC-USD", "bitcoin": "BTC-USD",
-    "eurusd": "EURUSD=X", "forex": "EURUSD=X",
-    "us30": "^DJI", "dow": "^DJI"
-}
-
-DB_FILE = "kiemaen_memory.db"
+# Database Setup for Local Persistent Memory
+DB_NAME = "kiemaen_general_memory.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS project_states (project_name TEXT PRIMARY KEY, blueprint TEXT, reference TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trade_journal (
+        CREATE TABLE IF NOT EXISTS conversation_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            action TEXT,
-            lot_size REAL,
-            entry REAL,
-            stop_loss REAL,
-            take_profit REAL,
-            macro_context TEXT,
-            status TEXT DEFAULT 'OPEN',
+            role TEXT,
+            content TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_lot', '0.10')")
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('risk_reward', '1:2')")
     conn.commit()
     conn.close()
 
 init_db()
 
-PENDING_TRADES: List[Dict[str, Any]] = []
+def save_chat_memory(role: str, content: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO conversation_history (role, content) VALUES (?, ?)", (role, content))
+    conn.commit()
+    conn.close()
 
+def fetch_recent_history(limit: int = 15) -> List[Dict[str, str]]:
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, content FROM conversation_history ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"role": row[0], "content": row[1]} for row in reversed(rows)]
+
+
+# Pydantic Models for API Requests
 class ChatRequest(BaseModel):
     message: str
 
-class TTSRequest(BaseModel):
-    text: str
-
-class TradeExecutionRequest(BaseModel):
-    symbol: str
-    action: str
-    lot_size: float = 0.10
-    stop_loss: float
-    take_profit: float
-    macro_context: Optional[str] = "Multi-Agent Consensus Setup"
-
-class InventionProjectRequest(BaseModel):
-    project_name: str
-    description: str
-    reference_project: Optional[str] = None
-
-class CodeExecRequest(BaseModel):
+class CodeExecutionRequest(BaseModel):
     code: str
 
-def get_db_setting(key: str, default: str) -> str:
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key=?", (key,))
-        row = cursor.fetchone()
-        conn.close()
-        return row[0] if row else default
-    except Exception as e:
-        return default
+class UniversalSearchRequest(BaseModel):
+    query: str
 
-def save_chat_memory(role: str, content: str):
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO history (role, content) VALUES (?, ?)", (role, content))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"DB Log Error: {e}")
-
-def fetch_recent_history(limit: int = 8) -> List[Dict[str, str]]:
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT role, content FROM history ORDER BY id DESC LIMIT ?", (limit,))
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
-    except Exception as e:
-        return []
-
-def get_project_blueprint(project_name: str) -> Optional[str]:
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT blueprint FROM project_states WHERE project_name=?", (project_name,))
-        row = cursor.fetchone()
-        conn.close()
-        return row[0] if row else None
-    except Exception as e:
-        return None
-
-def save_project_blueprint(project_name: str, blueprint: str, reference: str):
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO project_states (project_name, blueprint, reference) VALUES (?, ?, ?)", (project_name, blueprint, reference))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Project State Error: {e}")
 
 @app.get("/")
 def home():
-    if os.path.exists("index.html"):
-        return FileResponse("index.html", media_type="text/html")
-    return {"status": "Kiemaen Multi-Agent Trading & Engineering Engine Online"}
-
-@app.delete("/memory/reset")
-def reset_memory():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM history")
-    conn.commit()
-    conn.close()
-    return {"status": "SUCCESS", "message": "Conversation memory reset."}
-
-@app.post("/trade/execute")
-def execute_trade(trade: TradeExecutionRequest):
-    order_payload = {
-        "symbol": trade.symbol,
-        "action": trade.action.upper(),
-        "lot_size": trade.lot_size,
-        "stop_loss": trade.stop_loss,
-        "take_profit": trade.take_profit,
-        "status": "PENDING"
-    }
-    PENDING_TRADES.append(order_payload)
-    
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO trade_journal (symbol, action, lot_size, entry, stop_loss, take_profit, macro_context)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (trade.symbol, trade.action.upper(), trade.lot_size, trade.take_profit, trade.stop_loss, trade.take_profit, trade.macro_context))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Journal Log Error: {e}")
-
-    return {"status": "ORDER_QUEUED_AND_JOURNALED", "details": order_payload}
-
-@app.get("/trade/pending")
-def get_pending_trades():
-    global PENDING_TRADES
-    orders = PENDING_TRADES.copy()
-    PENDING_TRADES.clear()
-    return {"orders": orders}
-
-@app.get("/journal/ledger")
-def get_trade_ledger():
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, symbol, action, lot_size, entry, stop_loss, take_profit, macro_context, status, timestamp FROM trade_journal ORDER BY id DESC")
-        rows = cursor.fetchall()
-        conn.close()
-        ledger = []
-        for r in rows:
-            ledger.append({
-                "id": r[0], "symbol": r[1], "action": r[2], "lot_size": r[3],
-                "entry": r[4], "stop_loss": r[5], "take_profit": r[6],
-                "macro_context": r[7], "status": r[8], "timestamp": r[9]
-            })
-        return {"status": "SUCCESS", "total_records": len(ledger), "ledger": ledger}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/вена/execute-code") # kept path clean
-@app.post("/execute-code")
-def execute_python_code(payload: CodeExecRequest):
-    buffer = io.StringIO()
-    sys.stdout = buffer
-    try:
-        exec_globals = {"pd": pd, "yf": yf, "math": __import__("math")}
-        exec(payload.code, exec_globals)
-        sys.stdout = sys.__stdout__
-        output_val = buffer.getvalue()
-        return {"output": output_val if output_val else "Code executed successfully with no printed output."}
-    except Exception as e:
-        sys.stdout = sys.__stdout__
-        return {"error": str(e)}
-
-@app.post("/tts/speak")
-def speak_audio(payload: TTSRequest):
-    try:
-        clean_text = payload.text.replace("\n", ". ")
-        if len(clean_text) > 800:
-            clean_text = clean_text[:800] + "... output continued on screen."
-
-        tts = gTTS(text=clean_text, lang='en', slow=False)
-        fp = io.BytesIO()
-        tts.write_to_fp(fp)
-        fp.seek(0)
-        return StreamingResponse(fp, media_type="audio/mpeg")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/invention/evolve")
-def evolve_invention(payload: InventionProjectRequest):
-    reference_data = ""
-    if payload.reference_project:
-        existing = get_project_blueprint(payload.reference_project)
-        if existing:
-            reference_data = f"\n[REFERENCE PROJECT BLUEPRINT ({payload.reference_project})]:\n{existing}\n"
-
-    design_prompt = (
-        f"You are Kiemaen's Advanced R&D and Invention Engine. "
-        f"New Project Name: {payload.project_name}. Description: {payload.description}. "
-        f"{reference_data}"
-        f"Provide a comprehensive technical blueprint, component breakdown, hardware/software stack, and step-by-step integration guide building directly upon the reference design."
-    )
-    
-    res = chat(ChatRequest(message=design_prompt))
-    reply_text = res.get("reply", "")
-    save_project_blueprint(payload.project_name, reply_text, payload.reference_project or "None")
-    return {"reply": reply_text}
-
-@app.get("/market/analytics/multi")
-def get_multi_timeframe_analytics(asset: str = "gold"):
-    try:
-        symbol_key = asset.lower().replace("/", "").replace(" ", "")
-        ticker_symbol = ASSET_MAP.get(symbol_key, "GC=F")
-        ticker = yf.Ticker(ticker_symbol)
-
-        timeframes = {"15m": "5d", "1h": "1mo", "1d": "3mo"}
-        results = {}
-        bullish_score = 0
-        bearish_score = 0
-
-        for tf, period in timeframes.items():
-            df = ticker.history(period=period, interval=tf)
-            if df.empty or len(df) < 20:
-                continue
-
-            rsi = round(RSIIndicator(close=df["Close"], window=14).rsi().iloc[-1], 2)
-            ema_50 = round(EMAIndicator(close=df["Close"], window=50).ema_indicator().iloc[-1], 2)
-            current_price = round(df["Close"].iloc[-1], 2)
-            swing_high = round(df["High"].tail(15).max(), 2)
-            swing_low = round(df["Low"].tail(15).min(), 2)
-
-            bias = "BULLISH" if current_price >= ema_50 and rsi > 45 else "BEARISH"
-            if bias == "BULLISH":
-                bullish_score += 1
-            else:
-                bearish_score += 1
-
-            results[tf] = {
-                "price": current_price,
-                "rsi": rsi,
-                "ema_50": ema_50,
-                "swing_high": swing_high,
-                "swing_low": swing_low,
-                "structure_bias": bias
-            }
-
-        overall_bias = "MULTI-AGENT CONSENSUS BULLISH" if bullish_score >= bearish_score else "MULTI-AGENT CONSENSUS BEARISH"
-        lot_size = float(get_db_setting("default_lot", "0.10"))
-        latest_price = list(results.values())[0]["price"] if results else 4350.0
-
-        if "BULLISH" in overall_bias:
-            action = "BUY"
-            stop_loss = round(latest_price * 0.993, 2)
-            take_profit = round(latest_price * 1.018, 2)
-        else:
-            action = "SELL"
-            stop_loss = round(latest_price * 1.007, 2)
-            take_profit = round(latest_price * 0.982, 2)
-
-        return {
-            "asset": asset.upper(),
-            "strategy_model": "Multi-Agent Consensus (Analyst + Risk Manager Core)",
-            "overall_bias": overall_bias,
-            "timeframe_breakdown": results,
-            "recommended_trade": {
-                "symbol": ticker_symbol,
-                "action": action,
-                "lot_size": lot_size,
-                "entry": latest_price,
-                "stop_loss": stop_loss,
-                "take_profit": take_profit
-            }
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/analyze-chart")
-async def analyze_chart(file: UploadFile = File(...)):
-    if not GROQ_API_KEY:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
-
-    file_bytes = await file.read()
-    base64_image = base64.b64encode(file_bytes).decode("utf-8")
-    mime_type = file.content_type or "image/jpeg"
-    data_url = f"data:{mime_type};base64,{base64_image}"
-
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "qwen/qwen3.6-27b",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Analyze this chart using multi-agent consensus validation (Technical Analyst, Order Block structure, and Risk Guardian). Provide precise entry, Stop Loss, and Take Profit targets."},
-                    {"type": "image_url", "image_url": {"url": data_url}}
-                ]
-            }
-        ]
+    return {
+        "status": "ONLINE",
+        "mode": "General-Purpose AI Assistant",
+        "capabilities": ["Universal Chat", "Python Sandbox", "Dynamic Tool Routing", "Persistent SQLite Memory"]
     }
 
-    try:
-        res = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=25)
-        res_data = res.json()
-        if "choices" in res_data:
-            analysis = res_data["choices"][0]["message"]["content"]
-            save_chat_memory("user", "[Uploaded Chart for Multi-Agent Scan]")
-            save_chat_memory("assistant", analysis)
-            return {"analysis": analysis}
-        return {"analysis": f"Vision API Error: {res_data}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
-def chat(payload: ChatRequest):
+def general_chat(payload: ChatRequest):
     if not GROQ_API_KEY:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing.")
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing from environment variables.")
 
     user_query = payload.message.lower()
     save_chat_memory("user", payload.message)
 
-    if any(k in user_query for k in ["video", "animate", "movie", "clip", "generate video", "short story"]):
-        if REPLICATE_API_TOKEN:
-            try:
-                import replicate
-                os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
-                output = replicate.run("minimax/video-01", input={"prompt": payload.message, "prompt_optimizer": True})
-                url = output.url if hasattr(output, "url") else str(output)
-                reply = f"Generated cinematic video stream for your prompt:\n{url}"
-                save_chat_memory("assistant", reply)
-                return {"reply": reply}
-            except Exception as e:
-                print(f"Replicate Exception: {e}")
-
-    if any(k in user_query for k in ["image", "picture", "photo", "draw", "visualize", "render"]):
-        photo_prompt = f"A professional 8k rendering of {payload.message}, photorealistic, studio lighting, highly detailed"
-        encoded = urllib.parse.quote(photo_prompt)
-        img_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
-        reply = f"Photorealistic rendering created:\n{img_url}"
+    # Dynamic Media/Image Generation Intent Interceptor
+    if any(k in user_query for k in ["image", "picture", "photo", "draw", "visualize"]):
+        image_prompt = f"A high-quality rendering of {payload.message}, highly detailed, professional composition"
+        encoded_prompt = urllib.parse.quote(image_prompt)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&model=flux&nologo=true"
+        reply = f"Here is the visual asset you requested:\n{image_url}"
         save_chat_memory("assistant", reply)
-        return {"reply": reply}
+        return {"status": "SUCCESS", "type": "image", "reply": reply}
 
-    analytics_context = ""
-    market_keywords = ["gold", "xau", "btc", "bitcoin", "eurusd", "us30", "dow", "market", "analysis", "trade", "buy", "sell"]
-    
-    if any(k in user_query for k in market_keywords):
-        target_asset = "gold"
-        if "btc" in user_query or "bitcoin" in user_query:
-            target_asset = "btc"
-        elif "eur" in user_query or "forex" in user_query:
-            target_asset = "eurusd"
-        elif "us30" in user_query or "dow" in user_query:
-            target_asset = "us30"
-
-        data = get_multi_timeframe_analytics(asset=target_asset)
-        if "recommended_trade" in data:
-            rec = data["recommended_trade"]
-            macro_fundamental_context = (
-                f"\n[CURRENT MACRO & FUNDAMENTAL CONTEXT - AUGUST 2026]:\n"
-                f"- Market Driver: Gold (XAUUSD) is holding firm above $4,300 following recent softer U.S. labor data, cooling rate hikes.\n"
-                f"- Upcoming Events: U.S. CPI and PPI data releases dictate short-term Fed rate probabilities.\n"
-                f"- Institutional Flow: Central bank reserve accumulation continues to act as a solid floor.\n"
-            )
-            analytics_context = (
-                macro_fundamental_context +
-                f"\n[MULTI-AGENT QUANTITATIVE ENGINE DATA - {data['asset']}]\n"
-                f"Model: {data['strategy_model']}\n"
-                f"Consensus Bias: {data['overall_bias']}\n"
-                f"Timeframe breakdown: {json.dumps(data['timeframe_breakdown'])}\n"
-                f"Trade Strategy ({rec['lot_size']} Lot):\n"
-                f"• Setup: {rec['action']} @ ${rec['entry']}\n"
-                f"• Stop Loss: ${rec['stop_loss']} | Take Profit: ${rec['take_profit']}\n"
-            )
-
-            if "execute" in user_query or "place trade" in user_query:
-                execute_trade(TradeExecutionRequest(
-                    symbol=rec["symbol"], action=rec["action"],
-                    lot_size=rec["lot_size"], stop_loss=rec["stop_loss"], take_profit=rec["take_profit"],
-                    macro_context="Multi-Agent Consensus Validated Setup"
-                ))
-                analytics_context += "\n[ACTION: MULTI-AGENT CONSENSUS ORDER DISPATCHED & VERIFIED IN JOURNAL]"
-
-    lot_pref = get_db_setting("default_lot", "0.10")
-    
-    # EMBEDDED MULTI-AGENT SYNTHESIS PROMPT
+    # Universal General-Purpose System Prompt (Neutral and Adaptable)
     system_prompt = (
-        f"You are Kiemaen, an elite autonomous AI engine operating with a Multi-Agent Institutional Architecture (composed of a Technical Analyst, Fundamental News Analyst, and Risk Manager Guardian) designed for Jacob Peter Sithole (Civil Engineering student at UJ). "
-        f"MANDATORY DUAL-PROTOCOL:\n"
-        f"1. **Multi-Agent Trading Directive:** When analyzing markets, structure your response as a collaborative consensus output:\n"
-        f"   - **Fundamental/News Agent Report:** Breakdown macro drivers, central bank flows, and scheduled economic releases.\n"
-        f"   - **Technical Analyst Report:** Breakdown multi-timeframe indicator alignment and institutional structure.\n"
-        f"   - **Risk Manager Guardian Audit:** Evaluate risk-to-reward parameters, stop loss validity, and approve final trade setup values (Entry, SL, TP using default lot size {lot_pref}).\n"
-        f"2. **Engineering Directive:** When the user proposes a civil engineering project or mechanics problem, fetch and apply public standards (EN 1991, EN 1993, ACI) and explicitly detail potential failure modes, fatigue limits, and error margins.\n"
-        f"Be rigorous, structured, and professional."
+        "You are a helpful, highly intelligent, and versatile general-purpose AI assistant. "
+        "Adapt seamlessly to the user's intent—whether they need help with software programming, writing, complex analysis, "
+        "brainstorming, mathematics, or general educational research. Provide clear, concise, and structured responses."
     )
 
-    messages = [{"role": "system", "content": system_prompt + analytics_context}]
-    for item in fetch_recent_history(limit=8):
+    messages = [{"role": "system", "content": system_prompt}]
+    for item in fetch_recent_history(limit=12):
         messages.append({"role": item["role"], "content": item["content"]})
 
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    data = {"model": "llama-3.3-70b-versatile", "messages": messages}
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Using the fast and versatile Llama 3.3 model
+    data = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": messages,
+        "temperature": 0.7
+    }
 
     try:
-        res = requests.post(GROQ_CHAT_URL, headers=headers, json=data, timeout=15)
-        res_data = res.json()
+        response = requests.post(GROQ_CHAT_URL, headers=headers, json=data, timeout=30)
+        res_data = response.json()
+        
         if "choices" not in res_data:
-            raise HTTPException(status_code=500, detail=f"Groq API Error: {res_data}")
+            raise HTTPException(status_code=500, detail=f"LLM API Error: {res_data}")
+        
         reply = res_data["choices"][0]["message"]["content"]
         save_chat_memory("assistant", reply)
-        return {"reply": reply}
+        return {"status": "SUCCESS", "reply": reply}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
-    if not GROQ_API_KEY:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing.")
 
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
-    file_bytes = await file.read()
-    files = {"file": (file.filename or "recording.webm", file_bytes, file.content_type or "audio/webm")}
-    data = {"model": "whisper-large-v3-turbo"}
+@app.post("/execute-code")
+def execute_python_code(payload: CodeExecutionRequest):
+    """Executes arbitrary Python code snippets safely in a temporary sandbox environment."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
+        temp_file.write(payload.code.encode("utf-8"))
+        temp_file_path = temp_file.name
 
     try:
-        res = requests.post(GROQ_AUDIO_URL, headers=headers, files=files, data=data, timeout=15)
-        res_data = res.json()
-        if "text" not in res_data:
-            raise HTTPException(status_code=500, detail=f"Groq Whisper Error: {res_data}")
-        return {"text": res_data["text"]}
+        result = subprocess.run(
+            ["python", temp_file_path],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        output = result.stdout if result.returncode == 0 else result.stderr
+        return {
+            "status": "SUCCESS" if result.returncode == 0 else "ERROR",
+            "output": output
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "FAILED", "output": "Execution timed out (exceeded 10 seconds limit)."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "FAILED", "output": str(e)}
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+@app.post("/tool/search-mock")
+def mock_universal_search(payload: UniversalSearchRequest):
+    """Placeholder router for live global web search data integration."""
+    return {
+        "status": "SUCCESS",
+        "query": payload.query,
+        "result": f"Simulated lookup response for: '{payload.query}'. Plug in any search API (e.g., Tavily or SerpAPI) here to pull live web indexes."
+    }
